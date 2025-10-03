@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
-import { Upload, Archive, BarChart } from 'lucide-react'
+import { Upload, BarChart, Network } from 'lucide-react'
 import DataSources from './features/documents/DataSources'
+import DocumentUpload from './features/documents/DocumentUpload'
 
 function IconButton({ label, active, onClick, children }) {
   return (
@@ -23,23 +24,23 @@ function IconButton({ label, active, onClick, children }) {
 }
 
 export default function App() {
-  const [active, setActive] = useState('operations') // 'operations' | 'analytics' | 'documents'
+  const [active, setActive] = useState('analytics') // 'analytics' | 'data-integration' | 'documents'
 
   const title = useMemo(() => {
     switch(active) {
-      case 'operations': return 'Operations'
       case 'analytics': return 'Analytics'
+      case 'data-integration': return 'Data Source Integration'
       case 'documents': return 'Document Upload'
-      default: return 'Operations'
+      default: return 'Analytics'
     }
   }, [active])
   
   const subtitle = useMemo(() => {
     switch(active) {
-      case 'operations': return 'Track operations & milestones (coming soon).'
       case 'analytics': return 'Analyze performance data & insights (coming soon).'
-      case 'documents': return 'Upload & manage freight docs (coming soon).'
-      default: return 'Track operations & milestones (coming soon).'
+      case 'data-integration': return 'Connect business systems & data sources.'
+      case 'documents': return 'Upload freight documents & files.'
+      default: return 'Analyze performance data & insights (coming soon).'
     }
   }, [active])
 
@@ -52,11 +53,11 @@ export default function App() {
       >
         <div className="text-white/70 text-xs font-medium">FF</div>
         <div className="flex-1 flex flex-col items-center gap-3 mt-2">
-          <IconButton label="Operations" active={active==='operations'} onClick={() => setActive('operations')}>
-            <Archive size={22} />
-          </IconButton>
           <IconButton label="Analytics" active={active==='analytics'} onClick={() => setActive('analytics')}>
             <BarChart size={22} />
+          </IconButton>
+          <IconButton label="Data Integration" active={active==='data-integration'} onClick={() => setActive('data-integration')}>
+            <Network size={22} />
           </IconButton>
           <IconButton label="Document Upload" active={active==='documents'} onClick={() => setActive('documents')}>
             <Upload size={22} />
@@ -68,8 +69,10 @@ export default function App() {
       {/* Content */}
       <main className="ml-[72px] min-h-screen bg-offwhite">
         <div className="mx-auto max-w-6xl px-6 py-10">
-          {active === 'documents' ? (
+          {active === 'data-integration' ? (
             <DataSources />
+          ) : active === 'documents' ? (
+            <DocumentUpload />
           ) : (
             <>
               <div className="mb-6">
@@ -80,18 +83,16 @@ export default function App() {
               {/* Placeholder card */}
               <section className="rounded-3xl shadow-soft bg-white border border-slate-200/60">
                 <div className="p-8">
-                  <div className="h-80 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-500 border-2 border-dashed border-slate-300">
-                    <div className="text-center">
-                      <div className="text-lg font-medium mb-1">
-                        {active === 'operations' ? 'Operations Tracking Area' : 'Analytics Dashboard Area'}
-                      </div>
-                      <div className="text-sm">
-                        {active === 'operations'
-                          ? 'Monitor shipment progress and milestones'
-                          : 'View charts, graphs, and insights'}
-                      </div>
-                    </div>
+              <div className="h-80 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-500 border-2 border-dashed border-slate-300">
+                <div className="text-center">
+                  <div className="text-lg font-medium mb-1">
+                    Analytics Dashboard Area
                   </div>
+                  <div className="text-sm">
+                    View charts, graphs, and insights
+                  </div>
+                </div>
+              </div>
                 </div>
               </section>
             </>
