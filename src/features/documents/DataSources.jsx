@@ -1,32 +1,7 @@
 import { useState, useMemo } from 'react'
 import { Search } from 'lucide-react'
+import { Logo } from './Logo'
 
-// Brand color mapping
-const BRAND = {
-  // greens
-  quickbooks:'#2CA01C', googleSheets:'#22A565', box:'#1F70C1',
-  // blues
-  xero:'#13B5EA', snowflake:'#29B5E8', bigquery:'#4285F4', redshift:'#8A2BE2',
-  googleDrive:'#1A73E8', onedrive:'#0078D4', dropbox:'#0061FF',
-  salesforce:'#00A1E0', hubspot:'#FF7A59', pipedrive:'#2BB24C', zoho:'#C8202F',
-  // freight-ish / neutrals
-  cargowise:'#0B5FFF', magaya:'#1D4ED8', descartes:'#0EA5E9',
-  transop:'#2563EB', blujay:'#1F3A8A', project44:'#0B1E3B', fourkites:'#111827', supplystack:'#334155',
-  // customs
-  ecustoms:'#0EA5E9', klearnow:'#0F766E', avalara:'#FF6A00',
-  // carriers
-  maersk:'#0093D0', msc:'#FFB300', freightos:'#5326FF', inttra:'#1E40AF',
-  // payroll
-  gusto:'#F45D48', adp:'#E41E26', rippling:'#6B4F4F',
-  // subs/billing
-  stripe:'#635BFF', chargebee:'#5A31F4', recurly:'#6C5CE7', paddle:'#1F2937', zuora:'#00A3A1',
-  // analytics/ads
-  ga4:'#EA4335', googleAds:'#4285F4', fbAds:'#1877F2', linkedinAds:'#0A66C2', mixpanel:'#6E56CF',
-  // dbs
-  postgres:'#336791', mysql:'#00758F', sqlserver:'#A91D22',
-  // other
-  gmail:'#EA4335', outlook:'#0465C8', s3:'#F06529', sftp:'#374151',
-};
 
 // Categories
 const CATEGORIES = [
@@ -126,18 +101,6 @@ const CONNECTORS = [
   { id:'sftp', badge:'SFTP', name:'SFTP / FTP', category:'Other', description:'Batch file drops from partners.' },
 ];
 
-function LogoBadge({ id, label }) {
-  const bg = BRAND[id] || '#475569';
-  return (
-    <div
-      className="h-9 w-9 rounded-lg flex items-center justify-center text-white text-xs font-semibold shadow-sm"
-      style={{ background: bg }}
-      aria-hidden
-    >
-      {label}
-    </div>
-  );
-}
 
 function CategoryPill({ category, isActive, onClick }) {
   return (
@@ -159,9 +122,9 @@ function ConnectorCard({ connector, onConnect }) {
   return (
     <div className="rounded-xl shadow-soft bg-white border border-slate-200/60 hover:shadow-md hover:-translate-y-1 transition-all duration-200 p-6">
       <div className="flex items-start gap-4">
-        <LogoBadge id={connector.id} label={connector.badge} />
+        <Logo id={connector.id} badge={connector.badge} />
         <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-[color:var(--deep-blue)] text-lg mb-2">
+          <h3 className="font-semibold text-slate-900 text-lg mb-2">
             {connector.name}
           </h3>
           <p className="text-slate-600 text-sm mb-4">
