@@ -2,6 +2,8 @@ import { useState, useMemo } from 'react'
 import { Upload, BarChart, Network } from 'lucide-react'
 import DataSources from './features/documents/DataSources'
 import DocumentUpload from './features/documents/DocumentUpload'
+import AnalyticsTab from './features/analytics/AnalyticsTab'
+import { mockShipments } from './data/mockShipments'
 
 function IconButton({ label, active, onClick, children }) {
   return (
@@ -25,6 +27,7 @@ function IconButton({ label, active, onClick, children }) {
 
 export default function App() {
   const [active, setActive] = useState('analytics') // 'analytics' | 'data-integration' | 'documents'
+  const [shipmentData, setShipmentData] = useState(mockShipments)
 
   const title = useMemo(() => {
     switch(active) {
@@ -69,34 +72,13 @@ export default function App() {
       {/* Content */}
       <main className="ml-[72px] min-h-screen bg-offwhite">
         <div className="mx-auto max-w-6xl px-6 py-10">
-          {active === 'data-integration' ? (
+          {active === 'analytics' ? (
+            <AnalyticsTab rows={shipmentData} loading={false} />
+          ) : active === 'data-integration' ? (
             <DataSources />
           ) : active === 'documents' ? (
             <DocumentUpload />
-          ) : (
-            <>
-              <div className="mb-6">
-                <h1 className="text-3xl font-bold text-[color:var(--deep-blue)] tracking-tight mb-2">{title}</h1>
-                <p className="text-slate-600">{subtitle}</p>
-              </div>
-
-              {/* Placeholder card */}
-              <section className="rounded-3xl shadow-soft bg-white border border-slate-200/60">
-                <div className="p-8">
-              <div className="h-80 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-500 border-2 border-dashed border-slate-300">
-                <div className="text-center">
-                  <div className="text-lg font-medium mb-1">
-                    Analytics Dashboard Area
-                  </div>
-                  <div className="text-sm">
-                    View charts, graphs, and insights
-                  </div>
-                </div>
-              </div>
-                </div>
-              </section>
-            </>
-          )}
+          ) : null}
         </div>
       </main>
     </div>
