@@ -1,0 +1,8 @@
+/node_modules
+/dist
+mock_shipments.csv
+setup.sh
+src/analytics/InsightEngine.js
+src/data/mockShipments.js
+src/features/analytics/AnalyticsTab.jsx
+src/types/Shipment.js
