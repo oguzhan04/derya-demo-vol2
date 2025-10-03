@@ -44,10 +44,10 @@ export default function App() {
   }, [active])
 
   return (
-    <div className="h-screen w-screen flex">
+    <div className="relative min-h-screen">
       {/* Sidebar */}
       <aside
-        className="flex flex-col items-center gap-4 py-6"
+        className="fixed left-0 top-0 h-full flex flex-col items-center gap-4 py-6 z-10"
         style={{ width: '72px', background: 'var(--deep-blue)' }}
       >
         <div className="text-white/70 text-xs font-medium">FF</div>
@@ -66,7 +66,7 @@ export default function App() {
       </aside>
 
       {/* Content */}
-      <main className="flex-1 min-w-0 bg-offwhite">
+      <main className="ml-[72px] min-h-screen bg-offwhite">
         <div className="mx-auto max-w-6xl px-6 py-10">
           {active === 'documents' ? (
             <DataSources />
