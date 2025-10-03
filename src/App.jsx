@@ -1,77 +1,81 @@
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { Upload, BarChart, Network } from 'lucide-react'
 import DataSources from './features/documents/DataSources'
 import DocumentUpload from './features/documents/DocumentUpload'
 import AnalyticsTab from './features/analytics/AnalyticsTab'
 import { mockShipments } from './data/mockShipments'
 
-function IconButton({ label, active, onClick, children }) {
-  return (
-    <button
-      aria-label={label}
-      onClick={onClick}
-      className={[
-        'relative flex items-center justify-center',
-        'h-12 w-12 rounded-2xl transition-all duration-200',
-        active ? 'bg-white/20 text-white shadow-lg' : 'text-white/80 hover:text-white hover:bg-white/10',
-        'focus:outline-none focus:ring-2 focus:ring-white/60 focus:ring-offset-2 focus:ring-offset-[var(--deep-blue)]'
-      ].join(' ')}
-      title={label}
-    >
-      {children}
-      {/* active ring pill */}
-      {active && <span className="pointer-events-none absolute inset-0 rounded-2xl ring-2 ring-white/70" />}
-    </button>
-  )
-}
-
 export default function App() {
-  const [active, setActive] = useState('analytics') // 'analytics' | 'data-integration' | 'documents'
+  const [active, setActive] = useState('analytics')
   const [shipmentData, setShipmentData] = useState(mockShipments)
-
-  const title = useMemo(() => {
-    switch(active) {
-      case 'analytics': return 'Analytics'
-      case 'data-integration': return 'Data Source Integration'
-      case 'documents': return 'Document Upload'
-      default: return 'Analytics'
-    }
-  }, [active])
-  
-  const subtitle = useMemo(() => {
-    switch(active) {
-      case 'analytics': return 'Analyze performance data & insights (coming soon).'
-      case 'data-integration': return 'Connect business systems & data sources.'
-      case 'documents': return 'Upload freight documents & files.'
-      default: return 'Analyze performance data & insights (coming soon).'
-    }
-  }, [active])
+  const [isHovered, setIsHovered] = useState(false)
 
   return (
-    <div className="relative min-h-screen">
+    <div className="flex">
       {/* Sidebar */}
-      <aside
-        className="fixed left-0 top-0 h-full flex flex-col items-center gap-4 py-6 z-10"
-        style={{ width: '72px', background: 'var(--deep-blue)' }}
+      <div 
+        className={`${isHovered ? 'w-64' : 'w-[72px]'} bg-blue-900 transition-all duration-300 h-screen fixed left-0 top-0 z-50`}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
       >
-        <div className="text-white/70 text-xs font-medium">FF</div>
-        <div className="flex-1 flex flex-col items-center gap-3 mt-2">
-          <IconButton label="Analytics" active={active==='analytics'} onClick={() => setActive('analytics')}>
-            <BarChart size={22} />
-          </IconButton>
-          <IconButton label="Data Integration" active={active==='data-integration'} onClick={() => setActive('data-integration')}>
-            <Network size={22} />
-          </IconButton>
-          <IconButton label="Document Upload" active={active==='documents'} onClick={() => setActive('documents')}>
-            <Upload size={22} />
-          </IconButton>
+        <div className="p-4">
+          {/* Logo */}
+          <div className="text-white text-sm font-bold mb-8 flex items-center gap-3">
+            <div className="text-lg">FF</div>
+            <span className={`overflow-hidden transition-all duration-300 whitespace-nowrap text-xs text-gray-300 ${isHovered ? 'opacity-100' : 'opacity-0 w-0'}`}>
+              Derya Maritime
+            </span>
+          </div>
+
+          {/* Navigation */}
+          <div className="space-y-4">
+            <button 
+              onClick={() => setActive('analytics')}
+              className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all duration-200 ${
+                active === 'analytics' ? 'bg-white/20 text-white' : 'text-gray-300 hover:bg-white/10'
+              }`}
+            >
+              <BarChart size={20} className="flex-shrink-0" />
+              <span className={`overflow-hidden transition-all duration-300 whitespace-nowrap ${isHovered ? 'opacity-100' : 'opacity-0 w-0'}`}>
+                Analytics
+              </span>
+            </button>
+
+            <button 
+              onClick={() => setActive('data-integration')}
+              className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all duration-200 ${
+                active === 'data-integration' ? 'bg-white/20 text-white' : 'text-gray-300 hover:bg-white/10'
+              }`}
+            >
+              <Network size={20} className="flex-shrink-0" />
+              <span className={`overflow-hidden transition-all duration-300 whitespace-nowrap ${isHovered ? 'opacity-100' : 'opacity-0 w-0'}`}>
+                Data Integration
+              </span>
+            </button>
+
+            <button 
+              onClick={() => setActive('documents')}
+              className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all duration-200 ${
+                active === 'documents' ? 'bg-white/20 text-white' : 'text-gray-300 hover:bg-white/10'
+              }`}
+            >
+              <Upload size={20} className="flex-shrink-0" />
+              <span className={`overflow-hidden transition-all duration-300 whitespace-nowrap ${isHovered ? 'opacity-100' : 'opacity-0 w-0'}`}>
+                Document Upload
+              </span>
+            </button>
+          </div>
+
+          {/* Footer */}
+          <div className="absolute bottom-4 text-xs text-gray-500">
+            v0.1
+          </div>
         </div>
-        <div className="text-white/40 text-[10px]">v0.1</div>
-      </aside>
+      </div>
 
       {/* Content */}
-      <main className="ml-[72px] min-h-screen bg-offwhite">
-        <div className="mx-auto max-w-6xl px-6 py-10">
+      <div className="flex-1 ml-[72px] bg-gray-50 min-h-screen">
+        <div className="p-8 max-w-6xl mx-auto">
           {active === 'analytics' ? (
             <AnalyticsTab rows={shipmentData} loading={false} />
           ) : active === 'data-integration' ? (
@@ -80,7 +84,7 @@ export default function App() {
             <DocumentUpload />
           ) : null}
         </div>
-      </main>
+      </div>
     </div>
   )
 }
