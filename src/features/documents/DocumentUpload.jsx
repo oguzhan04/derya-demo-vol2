@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react'
-import { Upload, FileText, X } from 'lucide-react'
+import { Upload, FileText, X, Bot, Loader2 } from 'lucide-react'
 import ParsingBar from './ParsingBar'
+import { chatGPTService } from '../../services/chatgpt'
 
 export default function DocumentUpload() {
   const [uploadedFiles, setUploadedFiles] = useState([])
   const [selectedFile, setSelectedFile] = useState(null)
   const [parsedData, setParsedData] = useState(null)
+  const [aiAnalysis, setAiAnalysis] = useState(null)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
 
   // Create file-specific parse settings
   const getFileParseSettings = (fileId) => {
@@ -77,6 +80,42 @@ export default function DocumentUpload() {
     // Simulate parsing with mock data based on settings
     const mockData = generateMockParsedData(settings)
     setParsedData(mockData)
+  }
+
+  const analyzeWithChatGPT = async () => {
+    if (!selectedFile) return
+    
+    setIsAnalyzing(true)
+    setAiAnalysis(null)
+    
+    try {
+      // For demo purposes, we'll use mock document text
+      // In a real app, you'd extract text from the uploaded file
+      const mockDocumentText = `
+        BILL OF LADING
+        Shipper: ABC Trading Co.
+        Consignee: XYZ Import Ltd.
+        Carrier: Ocean Express Lines
+        Vessel: MV Atlantic Star
+        Voyage: 2024-001
+        Port of Loading: Los Angeles, USA
+        Port of Discharge: Hamburg, Germany
+        Commodity: Electronics Components
+        Weight: 15,000 kg
+        Volume: 25 CBM
+        Freight Rate: $2,500
+        Total Charges: $3,200
+        Special Instructions: Handle with care - fragile goods
+      `
+      
+      const analysis = await chatGPTService.analyzeDocument(mockDocumentText, 'freight')
+      setAiAnalysis(analysis)
+    } catch (error) {
+      console.error('ChatGPT Analysis Error:', error)
+      setAiAnalysis(`Error: ${error.message}`)
+    } finally {
+      setIsAnalyzing(false)
+    }
   }
 
   const generateMockParsedData = (settings) => {
@@ -359,7 +398,7 @@ export default function DocumentUpload() {
       {selectedFile && (
         <>
           {/* ParsingBar */}
-          <ParsingBar value={parseSettings} onChange={setParseSettings} />
+          <ParsingBar value={getFileParseSettings(selectedFile.id)} onChange={(settings) => updateFileParseSettings(selectedFile.id, settings)} />
 
           {/* Preview Table */}
           <section className="rounded-3xl shadow-soft bg-white border border-slate-200/60">
@@ -411,6 +450,61 @@ export default function DocumentUpload() {
                   <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 text-xs text-slate-500">
                     Showing {parsedData.rows.length} of {parsedData.rows.length} rows
                   </div>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* ChatGPT Analysis Section */}
+          <section className="rounded-3xl shadow-soft bg-white border border-slate-200/60">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-full bg-purple-100">
+                    <Bot size={20} className="text-purple-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-slate-900">AI Document Analysis</h3>
+                    <p className="text-sm text-slate-500">Powered by ChatGPT</p>
+                  </div>
+                </div>
+                <button
+                  onClick={analyzeWithChatGPT}
+                  disabled={isAnalyzing}
+                  className="bg-purple-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-purple-700 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {isAnalyzing ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      Analyzing...
+                    </>
+                  ) : (
+                    <>
+                      <Bot size={16} />
+                      Analyze Document
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {aiAnalysis && (
+                <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                  <div className="prose prose-sm max-w-none">
+                    <pre className="whitespace-pre-wrap text-slate-700 font-mono text-sm leading-relaxed">
+                      {aiAnalysis}
+                    </pre>
+                  </div>
+                </div>
+              )}
+
+              {!aiAnalysis && !isAnalyzing && (
+                <div className="bg-slate-50 rounded-xl p-8 text-center border border-slate-200">
+                  <div className="text-slate-400 mb-2">
+                    <Bot size={32} />
+                  </div>
+                  <p className="text-slate-500 text-sm">
+                    Click "Analyze Document" to get AI-powered insights about your freight document
+                  </p>
                 </div>
               )}
             </div>

@@ -1,4 +1,6 @@
 import { useState, useMemo } from 'react';
+import { Bot, Loader2 } from 'lucide-react';
+import { chatGPTService } from '../../services/chatgpt';
 
 // Simplified analytics without the complex insight engine for now
 function generateSimpleInsights(rows) {
@@ -186,7 +188,26 @@ function InsightCard({ insight }) {
 
 export default function AnalyticsTab({ rows = [], loading = false }) {
   const [selectedTag, setSelectedTag] = useState('all');
+  const [aiInsights, setAiInsights] = useState(null);
+  const [isGeneratingInsights, setIsGeneratingInsights] = useState(false);
   
+  const generateAIInsights = async () => {
+    if (!rows || rows.length === 0) return;
+    
+    setIsGeneratingInsights(true);
+    setAiInsights(null);
+    
+    try {
+      const insights = await chatGPTService.generateInsights(rows);
+      setAiInsights(insights);
+    } catch (error) {
+      console.error('ChatGPT Insights Error:', error);
+      setAiInsights(`Error generating insights: ${error.message}`);
+    } finally {
+      setIsGeneratingInsights(false);
+    }
+  };
+
   const insights = useMemo(() => {
     if (!rows || rows.length === 0) return [];
     return generateSimpleInsights(rows);
@@ -362,6 +383,59 @@ export default function AnalyticsTab({ rows = [], loading = false }) {
               ))}
             </div>
           )}
+
+          {/* ChatGPT AI Insights */}
+          <div className="rounded-3xl shadow-soft bg-white border border-slate-200/60 p-6 mt-8">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-full bg-purple-100">
+                  <Bot size={20} className="text-purple-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">AI-Powered Analytics</h3>
+                  <p className="text-sm text-slate-500">Advanced insights powered by ChatGPT</p>
+                </div>
+              </div>
+              <button
+                onClick={generateAIInsights}
+                disabled={isGeneratingInsights || rows.length === 0}
+                className="bg-purple-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-purple-700 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {isGeneratingInsights ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Bot size={16} />
+                    Generate AI Insights
+                  </>
+                )}
+              </button>
+            </div>
+
+            {aiInsights && (
+              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                <div className="prose prose-sm max-w-none">
+                  <pre className="whitespace-pre-wrap text-slate-700 font-mono text-sm leading-relaxed">
+                    {aiInsights}
+                  </pre>
+                </div>
+              </div>
+            )}
+
+            {!aiInsights && !isGeneratingInsights && (
+              <div className="bg-slate-50 rounded-xl p-8 text-center border border-slate-200">
+                <div className="text-slate-400 mb-2">
+                  <Bot size={32} />
+                </div>
+                <p className="text-slate-500 text-sm">
+                  Click "Generate AI Insights" to get advanced analytics and recommendations
+                </p>
+              </div>
+            )}
+          </div>
           
           {/* Summary Stats */}
           {insights.length > 0 && (
