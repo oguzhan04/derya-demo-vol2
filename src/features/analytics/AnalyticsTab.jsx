@@ -243,7 +243,7 @@ export default function AnalyticsTab({ rows = [], loading = false }) {
       <div className="space-y-6">
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-[color:var(--deep-blue)] tracking-tight mb-2">
-            Analytics
+            Operations Analytics
           </h1>
           <p className="text-slate-600">Generating insights...</p>
         </div>
@@ -301,7 +301,7 @@ export default function AnalyticsTab({ rows = [], loading = false }) {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-[color:var(--deep-blue)] tracking-tight mb-2">
-              Analytics
+              Operations Analytics
             </h1>
             <p className="text-slate-600">
               AI-powered insights from your freight data
