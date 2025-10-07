@@ -1,14 +1,11 @@
-import { SLAConfig } from './types.js';
-
 // ============================================================================
-// Default Configuration Values
+// Edge-Compatible Configuration Library (Pure JavaScript)
 // ============================================================================
 
 /**
- * Default SLA configuration values as specified in the CX specification.
- * These represent the standard service level agreements for logistics operations.
+ * Default SLA configuration values for logistics operations.
  */
-export const DEFAULT_SLA: SLAConfig = {
+export const DEFAULT_SLA = {
   quote_hours: 48,
   booking_confirm_hours: 24,
   dwell_days: 3,
@@ -30,7 +27,7 @@ export const DEFAULT_WEIGHTS = {
   exceptions: 2,     // Weight for recent exceptions count
   no_reply: 1,       // Weight for communication gaps
   sentiment: 1,      // Weight for negative sentiment
-} as const;
+};
 
 // ============================================================================
 // Configuration Utility Functions
@@ -39,17 +36,11 @@ export const DEFAULT_WEIGHTS = {
 /**
  * Merges a base SLA configuration with optional override values.
  * 
- * @param base - The base SLA configuration to merge from
- * @param override - Optional partial SLA configuration to override base values
- * @returns A new SLA configuration with merged values
- * 
- * @example
- * ```typescript
- * const customSla = mergeSla(DEFAULT_SLA, { quote_hours: 24 });
- * // Result: DEFAULT_SLA with quote_hours set to 24
- * ```
+ * @param {Object} base - The base SLA configuration to merge from
+ * @param {Object} override - Optional partial SLA configuration to override base values
+ * @returns {Object} A new SLA configuration with merged values
  */
-export function mergeSla(base: SLAConfig, override?: Partial<SLAConfig>): SLAConfig {
+export function mergeSla(base, override) {
   if (!override) {
     return { ...base };
   }
@@ -67,17 +58,10 @@ export function mergeSla(base: SLAConfig, override?: Partial<SLAConfig>): SLACon
 /**
  * Determines severity level based on breach size magnitude.
  * 
- * @param breachSize - The magnitude of the SLA breach (normalized 0-1 scale)
- * @returns Severity level: 'low', 'medium', or 'high'
- * 
- * @example
- * ```typescript
- * getSeverity(0.2);  // Returns 'low'
- * getSeverity(0.5);  // Returns 'medium' 
- * getSeverity(0.8);  // Returns 'high'
- * ```
+ * @param {number} breachSize - The magnitude of the SLA breach (normalized 0-1 scale)
+ * @returns {string} Severity level: 'low', 'medium', or 'high'
  */
-export function getSeverity(breachSize: number): 'low' | 'medium' | 'high' {
+export function getSeverity(breachSize) {
   // Ensure breachSize is within valid range
   const normalizedBreach = Math.max(0, Math.min(1, breachSize));
   
@@ -90,17 +74,13 @@ export function getSeverity(breachSize: number): 'low' | 'medium' | 'high' {
   }
 }
 
-// ============================================================================
-// Additional Configuration Utilities
-// ============================================================================
-
 /**
  * Creates a complete weights configuration by merging defaults with overrides.
  * 
- * @param overrides - Optional partial weights configuration
- * @returns Complete weights configuration
+ * @param {Object} overrides - Optional partial weights configuration
+ * @returns {Object} Complete weights configuration
  */
-export function createWeightsConfig(overrides?: Partial<typeof DEFAULT_WEIGHTS>): typeof DEFAULT_WEIGHTS {
+export function createWeightsConfig(overrides) {
   return {
     ...DEFAULT_WEIGHTS,
     ...overrides,
@@ -110,10 +90,10 @@ export function createWeightsConfig(overrides?: Partial<typeof DEFAULT_WEIGHTS>)
 /**
  * Validates that SLA configuration values are within reasonable bounds.
  * 
- * @param sla - SLA configuration to validate
- * @returns True if all values are within acceptable ranges
+ * @param {Object} sla - SLA configuration to validate
+ * @returns {boolean} True if all values are within acceptable ranges
  */
-export function validateSlaConfig(sla: SLAConfig): boolean {
+export function validateSlaConfig(sla) {
   return (
     sla.quote_hours > 0 &&
     sla.booking_confirm_hours > 0 &&
@@ -128,11 +108,11 @@ export function validateSlaConfig(sla: SLAConfig): boolean {
 /**
  * Calculates breach percentage for a given SLA metric.
  * 
- * @param actual - Actual time/value
- * @param sla - SLA threshold
- * @returns Breach percentage (0-1 scale)
+ * @param {number} actual - Actual time/value
+ * @param {number} sla - SLA threshold
+ * @returns {number} Breach percentage (0-1 scale)
  */
-export function calculateBreachPercentage(actual: number, sla: number): number {
+export function calculateBreachPercentage(actual, sla) {
   if (actual <= sla) {
     return 0;
   }
@@ -147,10 +127,10 @@ export function calculateBreachPercentage(actual: number, sla: number): number {
 /**
  * Gets severity weight multiplier for prioritization calculations.
  * 
- * @param severity - Severity level
- * @returns Weight multiplier for the severity level
+ * @param {string} severity - Severity level
+ * @returns {number} Weight multiplier for the severity level
  */
-export function getSeverityWeight(severity: 'low' | 'medium' | 'high' | 'critical'): number {
+export function getSeverityWeight(severity) {
   const weights = {
     low: 0.1,
     medium: 0.4,
@@ -158,7 +138,7 @@ export function getSeverityWeight(severity: 'low' | 'medium' | 'high' | 'critica
     critical: 1.0,
   };
   
-  return weights[severity];
+  return weights[severity] || 0.1;
 }
 
 // ============================================================================
@@ -172,7 +152,7 @@ export const SEVERITY_THRESHOLDS = {
   LOW: 0.3,
   MEDIUM: 0.7,
   HIGH: 1.0,
-} as const;
+};
 
 /**
  * Maximum breach percentage for scoring calculations.

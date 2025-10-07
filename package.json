@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
+    "lint:edge": "grep -R \"\\:\\s*[A-Z][A-Za-z0-9_<>]*\\s*[=)]\" api/**/*.js && echo 'TS in JS found' && exit 1 || echo 'OK'",
     "preview": "vite preview"
   },
   "dependencies": {

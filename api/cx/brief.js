@@ -1,6 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { BriefRequestSchema, BriefResponseSchema } from '../../src/cx/types.js';
-import { selectTopK } from '../../src/cx/rag.js';
+import { selectTopK } from '../_lib/rag-lite.js';
 
 // ============================================================================
 // Environment Variables
@@ -16,9 +14,9 @@ const BLOB_READ_WRITE_TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
 /**
  * Retrieves a RAG index from Vercel Blob storage.
  */
-async function getIndex(docId: string): Promise<any> {
+async function getIndex(docId) {
   if (!BLOB_READ_WRITE_TOKEN) {
-    throw new Error('BLOB_READ_WRITE_TOKEN environment variable is required');
+    return null; // Gracefully handle missing token
   }
 
   const response = await fetch(`https://api.vercel.com/v1/blob/cx/indexes/${docId}.json`, {
@@ -42,9 +40,9 @@ async function getIndex(docId: string): Promise<any> {
 /**
  * Calls OpenAI Embeddings API to get vector embedding for a query.
  */
-async function getQueryEmbedding(query: string): Promise<number[]> {
+async function getQueryEmbedding(query) {
   if (!OPENAI_API_KEY) {
-    throw new Error('OPENAI_API_KEY environment variable is required');
+    return null; // Gracefully handle missing key
   }
 
   const response = await fetch('https://api.openai.com/v1/embeddings', {
@@ -71,7 +69,7 @@ async function getQueryEmbedding(query: string): Promise<number[]> {
 /**
  * Calls OpenAI Chat API to generate a brief with actions.
  */
-async function generateBrief(context: string[], entityInfo: string): Promise<{ summary: string; actions: any[] }> {
+async function generateBrief(context, entityInfo) {
   if (!OPENAI_API_KEY) {
     throw new Error('OPENAI_API_KEY environment variable is required');
   }
@@ -144,7 +142,7 @@ Please provide a brief analysis and recommended actions.`;
 /**
  * Gets entity information for the brief.
  */
-function getEntityInfo(entity: { kind: string; id: string }): string {
+function getEntityInfo(entity) {
   const entityType = entity.kind.charAt(0).toUpperCase() + entity.kind.slice(1);
   return `${entityType} ${entity.id}`;
 }
@@ -153,39 +151,56 @@ function getEntityInfo(entity: { kind: string; id: string }): string {
 // API Handler
 // ============================================================================
 
-export async function POST(request: NextRequest) {
+export default async function handler(req) {
   try {
-    // Parse and validate request body
-    const body = await request.json();
-    const validatedRequest = BriefRequestSchema.parse(body);
+    // Check for required environment variables
+    if (!OPENAI_API_KEY) {
+      return new Response(JSON.stringify({
+        ok: false,
+        reason: "missing env",
+        hint: "set OPENAI_API_KEY"
+      }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
 
-    const { entity, include } = validatedRequest;
+    // Parse and validate request body
+    const body = await req.json().catch(() => ({}));
+
+    const { entity, include } = body;
 
     // Get entity information
     const entityInfo = getEntityInfo(entity);
 
     // Try to find related RAG index
-    let context: string[] = [];
-    let sources: Array<{ label: string; ref: string }> = [];
+    let context = [];
+    let sources = [];
 
     try {
       // Look for RAG index related to this entity
-      const index = await getIndex(entity.id);
-      
-      if (index && include?.context !== false) {
-        // Generate query embedding
-        const query = `Customer experience analysis for ${entityInfo}`;
-        const queryEmbedding = await getQueryEmbedding(query);
+      if (BLOB_READ_WRITE_TOKEN) {
+        const index = await getIndex(entity.id);
         
-        // Find relevant context
-        const topResults = selectTopK(index, queryEmbedding, 3);
-        context = topResults.map(result => result.text);
-        
-        // Add sources
-        sources = topResults.map(result => ({
-          label: `Document chunk ${result.id}`,
-          ref: `/documents/${entity.id}#${result.id}`,
-        }));
+        if (index && include && include.context !== false) {
+          // Generate query embedding
+          const query = `Customer experience analysis for ${entityInfo}`;
+          const queryEmbedding = await getQueryEmbedding(query);
+          
+          if (queryEmbedding) {
+            // Find relevant context
+            const topResults = selectTopK(index, queryEmbedding, 3);
+            context = topResults.map(result => result.text);
+            
+            // Add sources
+            sources = topResults.map(result => ({
+              label: `Document chunk ${result.id}`,
+              ref: `/documents/${entity.id}#${result.id}`,
+            }));
+          }
+        }
+      } else {
+        console.log('BLOB_READ_WRITE_TOKEN not set - skipping RAG context retrieval');
       }
     } catch (error) {
       console.warn('Failed to retrieve RAG context:', error);
@@ -232,30 +247,24 @@ export async function POST(request: NextRequest) {
     }
 
     // Return response
-    const response: BriefResponseSchema = {
+    const response = {
       summary_md: briefResult.summary,
       actions: briefResult.actions,
       sources: sources.length > 0 ? sources : undefined,
     };
 
-    return NextResponse.json(response);
+    return new Response(JSON.stringify(response), {
+      headers: { 'content-type': 'application/json' }
+    });
 
   } catch (error) {
     console.error('Brief API error:', error);
 
-    // Handle validation errors
-    if (error.name === 'ZodError') {
-      return NextResponse.json(
-        { error: 'Invalid request format', details: error.errors },
-        { status: 400 }
-      );
-    }
-
     // Handle other errors
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return new Response(JSON.stringify({ error: 'Internal server error' }), {
+      status: 500,
+      headers: { 'content-type': 'application/json' }
+    });
   }
 }
 
