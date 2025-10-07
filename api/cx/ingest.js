@@ -1,6 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { IngestRequestSchema, IngestResponseSchema } from '../../src/cx/types.js';
-import { chunkText, buildIndex } from '../../src/cx/rag.js';
+import { chunkText, buildIndex } from '../../src/cx/rag.ts';
 
 // ============================================================================
 // Environment Variables
@@ -16,7 +14,7 @@ const BLOB_READ_WRITE_TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
 /**
  * Calls OpenAI Embeddings API to get vector embeddings for text chunks.
  */
-async function getEmbeddings(texts: string[]): Promise<number[][]> {
+async function getEmbeddings(texts) {
   if (!OPENAI_API_KEY) {
     throw new Error('OPENAI_API_KEY environment variable is required');
   }
@@ -39,13 +37,13 @@ async function getEmbeddings(texts: string[]): Promise<number[][]> {
   }
 
   const data = await response.json();
-  return data.data.map((item: any) => item.embedding);
+  return data.data.map((item) => item.embedding);
 }
 
 /**
  * Stores a RAG index to Vercel Blob storage.
  */
-async function storeIndex(docId: string, index: any): Promise<void> {
+async function storeIndex(docId, index) {
   if (!BLOB_READ_WRITE_TOKEN) {
     throw new Error('BLOB_READ_WRITE_TOKEN environment variable is required');
   }
@@ -69,52 +67,56 @@ async function storeIndex(docId: string, index: any): Promise<void> {
 // API Handler
 // ============================================================================
 
-export async function POST(request: NextRequest) {
+export default async function handler(req) {
   try {
     // Parse and validate request body
-    const body = await request.json();
-    const validatedRequest = IngestRequestSchema.parse(body);
+    const body = await req.json().catch(() => ({}));
 
     // For MVP, handle upload source with text payload
-    if (validatedRequest.source === 'upload') {
-      const { text, docId, meta } = validatedRequest.payload || {};
+    if (body.source === 'upload') {
+      const { text, docId, meta } = body.payload || {};
       
       if (!text || !docId) {
-        return NextResponse.json(
-          { error: 'Missing required fields: text and docId' },
-          { status: 400 }
-        );
+        return new Response(JSON.stringify({ error: 'Missing required fields: text and docId' }), {
+          status: 400,
+          headers: { 'content-type': 'application/json' }
+        });
       }
 
       let docsImported = 0;
 
       // If indexDocs is true, process the text for RAG indexing
-      if (validatedRequest.options?.indexDocs) {
-        try {
-          // Chunk the text
-          const chunks = chunkText(text, 800, 100);
-          
-          // Get embeddings for chunks
-          const embeddings = await getEmbeddings(chunks);
-          
-          // Build RAG index
-          const index = buildIndex(docId, chunks, embeddings, 'text-embedding-3-small');
-          
-          // Store index to Vercel Blob
-          await storeIndex(docId, index);
-          
-          docsImported = 1;
-        } catch (error) {
-          console.error('Error processing document for indexing:', error);
-          return NextResponse.json(
-            { error: 'Failed to process document for indexing' },
-            { status: 500 }
-          );
+      if (body.options && body.options.indexDocs) {
+        if (!BLOB_READ_WRITE_TOKEN) {
+          console.log('BLOB_READ_WRITE_TOKEN not set - skipping document indexing');
+          docsImported = 0;
+        } else {
+          try {
+            // Chunk the text
+            const chunks = chunkText(text, 800, 100);
+            
+            // Get embeddings for chunks
+            const embeddings = await getEmbeddings(chunks);
+            
+            // Build RAG index
+            const index = buildIndex(docId, chunks, embeddings, 'text-embedding-3-small');
+            
+            // Store index to Vercel Blob
+            await storeIndex(docId, index);
+            
+            docsImported = 1;
+          } catch (error) {
+            console.error('Error processing document for indexing:', error);
+            return new Response(JSON.stringify({ error: 'Failed to process document for indexing' }), {
+              status: 500,
+              headers: { 'content-type': 'application/json' }
+            });
+          }
         }
       }
 
       // Return success response
-      const response: IngestResponseSchema = {
+      const response = {
         ok: true,
         imported: {
           deals: 0,
@@ -124,13 +126,15 @@ export async function POST(request: NextRequest) {
         },
       };
 
-      return NextResponse.json(response);
+      return new Response(JSON.stringify(response), {
+        headers: { 'content-type': 'application/json' }
+      });
     }
 
     // Handle other sources (integration, existing) - placeholder for MVP
-    if (validatedRequest.source === 'integration' || validatedRequest.source === 'existing') {
+    if (body.source === 'integration' || body.source === 'existing') {
       // For MVP, just return success without processing
-      const response: IngestResponseSchema = {
+      const response = {
         ok: true,
         imported: {
           deals: 0,
@@ -140,30 +144,24 @@ export async function POST(request: NextRequest) {
         },
       };
 
-      return NextResponse.json(response);
+      return new Response(JSON.stringify(response), {
+        headers: { 'content-type': 'application/json' }
+      });
     }
 
-    return NextResponse.json(
-      { error: 'Unsupported source type' },
-      { status: 400 }
-    );
+    return new Response(JSON.stringify({ error: 'Unsupported source type' }), {
+      status: 400,
+      headers: { 'content-type': 'application/json' }
+    });
 
   } catch (error) {
     console.error('Ingest API error:', error);
 
-    // Handle validation errors
-    if (error.name === 'ZodError') {
-      return NextResponse.json(
-        { error: 'Invalid request format', details: error.errors },
-        { status: 400 }
-      );
-    }
-
     // Handle other errors
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return new Response(JSON.stringify({ error: 'Internal server error' }), {
+      status: 500,
+      headers: { 'content-type': 'application/json' }
+    });
   }
 }
 

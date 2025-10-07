@@ -1,8 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { ScoreRequestSchema, ScoreResponseSchema } from '../../src/cx/types.js';
-import { scoreWinLikelihood, scoreCxRisk } from '../../src/cx/heuristics.js';
-import { DEFAULT_SLA } from '../../src/cx/config.js';
-import { filterDemoData } from '../../src/cx/demoData.js';
+import { scoreWinLikelihood, scoreCxRisk } from '../../src/cx/heuristics.ts';
+import { DEFAULT_SLA } from '../../src/cx/config.ts';
+import { filterDemoData } from '../../src/cx/demoData.ts';
 
 // ============================================================================
 // Sample Data Store (In-Memory for MVP)
@@ -126,7 +124,7 @@ const sampleData = {
 /**
  * Gets sample data based on scope and optional ID filter.
  */
-function getSampleData(scope: string, id?: string) {
+function getSampleData(scope, id) {
   let deals = sampleData.deals;
   let shipments = sampleData.shipments;
   let comms = sampleData.comms;
@@ -150,7 +148,7 @@ function getSampleData(scope: string, id?: string) {
 /**
  * Scores entities using heuristics functions.
  */
-function scoreEntities(deals: any[], shipments: any[], comms: any[], sla: any) {
+function scoreEntities(deals, shipments, comms, sla) {
   const scores = [];
 
   for (const deal of deals) {
@@ -186,13 +184,12 @@ function scoreEntities(deals: any[], shipments: any[], comms: any[], sla: any) {
 // API Handler
 // ============================================================================
 
-export async function POST(request: NextRequest) {
+export default async function handler(req) {
   try {
     // Parse and validate request body
-    const body = await request.json();
-    const validatedRequest = ScoreRequestSchema.parse(body);
+    const body = await req.json().catch(() => ({}));
 
-    const { scope, id, payload } = validatedRequest;
+    const { scope, id, payload } = body;
 
     // Use payload data if provided, otherwise use demo data
     let deals, shipments, comms;
@@ -210,38 +207,32 @@ export async function POST(request: NextRequest) {
     }
 
     if (deals.length === 0) {
-      return NextResponse.json(
-        { scores: [] },
-        { status: 200 }
-      );
+      return new Response(JSON.stringify({ scores: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      });
     }
 
     // Score entities using heuristics
     const scores = scoreEntities(deals, shipments, comms, DEFAULT_SLA);
 
     // Return response
-    const response: ScoreResponseSchema = {
+    const response = {
       scores,
     };
 
-    return NextResponse.json(response);
+    return new Response(JSON.stringify(response), {
+      headers: { 'content-type': 'application/json' }
+    });
 
   } catch (error) {
     console.error('Score API error:', error);
 
-    // Handle validation errors
-    if (error.name === 'ZodError') {
-      return NextResponse.json(
-        { error: 'Invalid request format', details: error.errors },
-        { status: 400 }
-      );
-    }
-
     // Handle other errors
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return new Response(JSON.stringify({ error: 'Internal server error' }), {
+      status: 500,
+      headers: { 'content-type': 'application/json' }
+    });
   }
 }
 

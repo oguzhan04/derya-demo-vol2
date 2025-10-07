@@ -1,8 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { NotifyRequestSchema, NotifyResponseSchema } from '../../src/cx/types.js';
-import { deriveNotifications } from '../../src/cx/heuristics.js';
-import { DEFAULT_SLA, mergeSla } from '../../src/cx/config.js';
-import { filterDemoData } from '../../src/cx/demoData.js';
+import { deriveNotifications } from '../../src/cx/heuristics.ts';
+import { DEFAULT_SLA, mergeSla } from '../../src/cx/config.ts';
+import { filterDemoData } from '../../src/cx/demoData.ts';
 
 // ============================================================================
 // Sample Data Store (In-Memory for MVP)
@@ -172,7 +170,7 @@ const sampleData = {
 /**
  * Gets sample data based on scope and optional ID filter.
  */
-function getSampleData(scope: string, id?: string) {
+function getSampleData(scope, id) {
   let deals = sampleData.deals;
   let shipments = sampleData.shipments;
   let comms = sampleData.comms;
@@ -197,13 +195,12 @@ function getSampleData(scope: string, id?: string) {
 // API Handler
 // ============================================================================
 
-export async function POST(request: NextRequest) {
+export default async function handler(req) {
   try {
     // Parse and validate request body
-    const body = await request.json();
-    const validatedRequest = NotifyRequestSchema.parse(body);
+    const body = await req.json().catch(() => ({}));
 
-    const { scope, sla, payload } = validatedRequest;
+    const { scope, sla, payload } = body;
 
     // Merge SLA configuration with defaults
     const mergedSla = mergeSla(DEFAULT_SLA, sla);
@@ -224,10 +221,10 @@ export async function POST(request: NextRequest) {
     }
 
     if (deals.length === 0) {
-      return NextResponse.json(
-        { notifications: [] },
-        { status: 200 }
-      );
+      return new Response(JSON.stringify({ notifications: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      });
     }
 
     // Generate notifications using heuristics
@@ -239,28 +236,22 @@ export async function POST(request: NextRequest) {
     });
 
     // Return response
-    const response: NotifyResponseSchema = {
+    const response = {
       notifications,
     };
 
-    return NextResponse.json(response);
+    return new Response(JSON.stringify(response), {
+      headers: { 'content-type': 'application/json' }
+    });
 
   } catch (error) {
     console.error('Notify API error:', error);
 
-    // Handle validation errors
-    if (error.name === 'ZodError') {
-      return NextResponse.json(
-        { error: 'Invalid request format', details: error.errors },
-        { status: 400 }
-      );
-    }
-
     // Handle other errors
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return new Response(JSON.stringify({ error: 'Internal server error' }), {
+      status: 500,
+      headers: { 'content-type': 'application/json' }
+    });
   }
 }
 
