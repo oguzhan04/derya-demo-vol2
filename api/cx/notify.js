@@ -1,6 +1,6 @@
-import { deriveNotifications } from '../../src/cx/heuristics.ts';
-import { DEFAULT_SLA, mergeSla } from '../../src/cx/config.ts';
-import { filterDemoData } from '../../src/cx/demoData.ts';
+import { deriveNotifications } from '../_lib/heuristics-lite.js';
+import { DEFAULT_SLA, mergeSla } from '../_lib/config-lite.js';
+import { filterDemoData } from '../_lib/demoData-lite.js';
 
 // ============================================================================
 // Sample Data Store (In-Memory for MVP)

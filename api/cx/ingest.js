@@ -1,4 +1,4 @@
-import { chunkText, buildIndex } from '../../src/cx/rag.ts';
+import { chunkText, buildIndex } from '../_lib/rag-lite.js';
 
 // ============================================================================
 // Environment Variables
@@ -16,7 +16,7 @@ const BLOB_READ_WRITE_TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
  */
 async function getEmbeddings(texts) {
   if (!OPENAI_API_KEY) {
-    throw new Error('OPENAI_API_KEY environment variable is required');
+    return null; // Gracefully handle missing key
   }
 
   const response = await fetch('https://api.openai.com/v1/embeddings', {
@@ -45,7 +45,7 @@ async function getEmbeddings(texts) {
  */
 async function storeIndex(docId, index) {
   if (!BLOB_READ_WRITE_TOKEN) {
-    throw new Error('BLOB_READ_WRITE_TOKEN environment variable is required');
+    return; // Gracefully handle missing token
   }
 
   const response = await fetch(`https://api.vercel.com/v1/blob/cx/indexes/${docId}.json`, {
@@ -69,6 +69,18 @@ async function storeIndex(docId, index) {
 
 export default async function handler(req) {
   try {
+    // Check for required environment variables
+    if (!OPENAI_API_KEY || !BLOB_READ_WRITE_TOKEN) {
+      return new Response(JSON.stringify({
+        ok: false,
+        reason: "missing env",
+        hint: "set OPENAI_API_KEY/BLOB_READ_WRITE_TOKEN"
+      }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+
     // Parse and validate request body
     const body = await req.json().catch(() => ({}));
 
@@ -98,13 +110,18 @@ export default async function handler(req) {
             // Get embeddings for chunks
             const embeddings = await getEmbeddings(chunks);
             
-            // Build RAG index
-            const index = buildIndex(docId, chunks, embeddings, 'text-embedding-3-small');
-            
-            // Store index to Vercel Blob
-            await storeIndex(docId, index);
-            
-            docsImported = 1;
+            if (embeddings) {
+              // Build RAG index
+              const index = buildIndex(docId, chunks, embeddings, 'text-embedding-3-small');
+              
+              // Store index to Vercel Blob
+              await storeIndex(docId, index);
+              
+              docsImported = 1;
+            } else {
+              console.log('Failed to get embeddings - skipping indexing');
+              docsImported = 0;
+            }
           } catch (error) {
             console.error('Error processing document for indexing:', error);
             return new Response(JSON.stringify({ error: 'Failed to process document for indexing' }), {

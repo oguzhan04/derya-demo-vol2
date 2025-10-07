@@ -9,7 +9,7 @@ import {
   Evidence,
   Link
 } from './types.js';
-import { DEFAULT_SLA, getSeverity, calculateBreachPercentage, getSeverityWeight } from './config.js';
+import { DEFAULT_SLA, DEFAULT_WEIGHTS, getSeverity, calculateBreachPercentage, getSeverityWeight } from './config.js';
 import { getAccountTier } from './demoData.js';
 
 // ============================================================================
@@ -254,7 +254,7 @@ function calculateCommFrequency(comms: Communication[]): number {
   return 0; // Low frequency
 }
 
-function calculateRecentActivity(comms: Communication[], sla: SLAConfig): number {
+function calculateRecentActivity(comms: Communication[], _sla: SLAConfig): number {
   if (comms.length === 0) return -15; // No activity
   
   const lastComm = comms.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
@@ -419,7 +419,7 @@ function calculateSentimentDecline(comms: Communication[]): { score: number; sig
     }
   });
   
-  const avgSentiment = sentimentValues.reduce((sum, val) => sum + val, 0) / sentimentValues.length;
+  const avgSentiment = sentimentValues.reduce<number>((sum, val) => sum + val, 0) / sentimentValues.length;
   
   if (avgSentiment < -0.4) {
     score = 15;
@@ -667,7 +667,7 @@ function checkSentimentDecline(comms: Communication[]): Notification | null {
     }
   });
   
-  const avgSentiment = sentimentValues.reduce((sum, val) => sum + val, 0) / sentimentValues.length;
+  const avgSentiment = sentimentValues.reduce<number>((sum, val) => sum + val, 0) / sentimentValues.length;
   
   if (avgSentiment < -0.4) {
     return createNotification(
@@ -790,7 +790,7 @@ export function dedupeNotifications(notifs: Notification[]): Notification[] {
   
   const deduplicated: Notification[] = [];
   
-  for (const [key, group] of grouped) {
+  for (const [_key, group] of grouped) {
     if (group.length === 1) {
       deduplicated.push(group[0]);
       continue;

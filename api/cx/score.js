@@ -1,6 +1,6 @@
-import { scoreWinLikelihood, scoreCxRisk } from '../../src/cx/heuristics.ts';
-import { DEFAULT_SLA } from '../../src/cx/config.ts';
-import { filterDemoData } from '../../src/cx/demoData.ts';
+import { scoreWinLikelihood, scoreCxRisk } from '../_lib/heuristics-lite.js';
+import { DEFAULT_SLA } from '../_lib/config-lite.js';
+import { filterDemoData } from '../_lib/demoData-lite.js';
 
 // ============================================================================
 // Sample Data Store (In-Memory for MVP)

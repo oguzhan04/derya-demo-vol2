@@ -1,4 +1,4 @@
-import { selectTopK } from '../../src/cx/rag.ts';
+import { selectTopK } from '../_lib/rag-lite.js';
 
 // ============================================================================
 // Environment Variables
@@ -16,7 +16,7 @@ const BLOB_READ_WRITE_TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
  */
 async function getIndex(docId) {
   if (!BLOB_READ_WRITE_TOKEN) {
-    throw new Error('BLOB_READ_WRITE_TOKEN environment variable is required');
+    return null; // Gracefully handle missing token
   }
 
   const response = await fetch(`https://api.vercel.com/v1/blob/cx/indexes/${docId}.json`, {
@@ -42,7 +42,7 @@ async function getIndex(docId) {
  */
 async function getQueryEmbedding(query) {
   if (!OPENAI_API_KEY) {
-    throw new Error('OPENAI_API_KEY environment variable is required');
+    return null; // Gracefully handle missing key
   }
 
   const response = await fetch('https://api.openai.com/v1/embeddings', {
@@ -153,6 +153,18 @@ function getEntityInfo(entity) {
 
 export default async function handler(req) {
   try {
+    // Check for required environment variables
+    if (!OPENAI_API_KEY) {
+      return new Response(JSON.stringify({
+        ok: false,
+        reason: "missing env",
+        hint: "set OPENAI_API_KEY"
+      }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+
     // Parse and validate request body
     const body = await req.json().catch(() => ({}));
 
@@ -175,15 +187,17 @@ export default async function handler(req) {
           const query = `Customer experience analysis for ${entityInfo}`;
           const queryEmbedding = await getQueryEmbedding(query);
           
-          // Find relevant context
-          const topResults = selectTopK(index, queryEmbedding, 3);
-          context = topResults.map(result => result.text);
-          
-          // Add sources
-          sources = topResults.map(result => ({
-            label: `Document chunk ${result.id}`,
-            ref: `/documents/${entity.id}#${result.id}`,
-          }));
+          if (queryEmbedding) {
+            // Find relevant context
+            const topResults = selectTopK(index, queryEmbedding, 3);
+            context = topResults.map(result => result.text);
+            
+            // Add sources
+            sources = topResults.map(result => ({
+              label: `Document chunk ${result.id}`,
+              ref: `/documents/${entity.id}#${result.id}`,
+            }));
+          }
         }
       } else {
         console.log('BLOB_READ_WRITE_TOKEN not set - skipping RAG context retrieval');
