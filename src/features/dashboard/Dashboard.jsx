@@ -543,9 +543,9 @@ export default function Dashboard() {
       </div>
 
       {/* Bottom Row */}
-      <div className="grid grid-cols-2 gap-6 mb-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <MarketAwareLanes data={lanesData} />
-        <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-4">
           <CustomerQualityIndex data={customerQuality} />
           <ARAging data={arAging} />
         </div>

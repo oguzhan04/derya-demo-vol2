@@ -200,3 +200,4 @@ export const TrackingSchema = {
   events: 'array' // [{ timestamp, event, location, status }]
 };
 
+
