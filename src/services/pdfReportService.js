@@ -1,4 +1,4 @@
-import jsPDF from 'jspdf';
+import { jsPDF } from 'jspdf';
 import { chatGPTService } from './chatgpt.js';
 import { getAllLoads } from '../data/mockLoads.js';
 
