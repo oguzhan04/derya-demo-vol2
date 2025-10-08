@@ -40,6 +40,23 @@ export default function DocumentUpload() {
     setUploadedFiles(prev => [...prev, ...newFiles])
   }
 
+  const handleDocumentUploadWithChatGPT = async (file, documentType) => {
+    if (!file) return
+    
+    try {
+      const processedDocument = await processDocumentWithChatGPT(file, documentType)
+      if (processedDocument) {
+        // In a real app, this would save to the load's document structure
+        console.log('Document processed with ChatGPT:', processedDocument)
+        alert(`Document processed successfully! Extracted JSON data is ready.`)
+        return processedDocument
+      }
+    } catch (error) {
+      console.error('Error processing document with ChatGPT:', error)
+      alert('Error processing document. Please try again.')
+    }
+  }
+
   const handleDragOver = (e) => {
     e.preventDefault()
     e.stopPropagation()
@@ -113,6 +130,110 @@ export default function DocumentUpload() {
     } catch (error) {
       console.error('ChatGPT Analysis Error:', error)
       setAiAnalysis(`Error: ${error.message}`)
+    } finally {
+      setIsAnalyzing(false)
+    }
+  }
+
+  const processDocumentWithChatGPT = async (file, documentType) => {
+    if (!file) return null
+    
+    setIsAnalyzing(true)
+    
+    try {
+      // For demo purposes, we'll use mock document text based on document type
+      // In a real app, you'd extract text from the uploaded file using OCR or PDF parsing
+      let mockDocumentText = ''
+      
+      switch (documentType) {
+        case 'billOfLading':
+          mockDocumentText = `
+            BILL OF LADING
+            Shipper: Shanghai Electronics Co.
+            Consignee: LA Electronics Inc.
+            Carrier: Maersk Line
+            Vessel: MAERSK SHANGHAI
+            Voyage: 001E
+            Port of Loading: Shanghai
+            Port of Discharge: Los Angeles
+            Commodity: Electronic components and devices
+            Weight: 15,000 kg
+            Volume: 25 CBM
+            Container Numbers: MSKU1234567
+            Seal Numbers: SEAL001
+            Freight Charges: $3,200
+            Currency: USD
+            Marks and Numbers: SH/LA-001
+          `
+          break
+        case 'commercialInvoice':
+          mockDocumentText = `
+            COMMERCIAL INVOICE
+            Invoice Number: INV-2024-001
+            Invoice Date: 2024-01-15
+            Seller: Shanghai Electronics Co.
+            Buyer: LA Electronics Inc.
+            Total Value: $85,000
+            Currency: USD
+            HS Codes: 8517.12.00, 8517.62.00
+            Country of Origin: China
+            Terms of Sale: FOB Shanghai
+            Payment Terms: 30 days
+          `
+          break
+        case 'invoices':
+          mockDocumentText = `
+            CARRIER INVOICE
+            Invoice Number: MAEU-INV-001
+            Invoice Date: 2024-01-14
+            Vendor: Maersk Line
+            Total Amount: $3,200
+            Currency: USD
+            Line Items:
+            - Ocean freight: $2,800
+            - Terminal handling: $400
+            Due Date: 2024-02-14
+            Payment Status: Pending
+          `
+          break
+        default:
+          mockDocumentText = `
+            DOCUMENT
+            Type: ${documentType}
+            Content: Sample document content for processing
+            Date: ${new Date().toISOString().split('T')[0]}
+            Reference: REF-${Date.now()}
+          `
+      }
+      
+      const extractedJson = await chatGPTService.analyzeDocument(mockDocumentText, documentType)
+      
+      // Parse the JSON response from ChatGPT
+      let parsedJson
+      try {
+        parsedJson = JSON.parse(extractedJson)
+      } catch (parseError) {
+        // If parsing fails, create a structured response
+        parsedJson = {
+          documentType: documentType,
+          extractedData: extractedJson,
+          processedAt: new Date().toISOString(),
+          confidence: 'medium'
+        }
+      }
+      
+      return {
+        id: `doc-${Date.now()}`,
+        filename: file.name,
+        uploadedAt: new Date().toISOString(),
+        extractedJson: parsedJson,
+        validationStatus: 'valid',
+        fileSize: file.size,
+        mimeType: file.type
+      }
+    } catch (error) {
+      console.error('ChatGPT Document Processing Error:', error)
+      return null
     } finally {
       setIsAnalyzing(false)
     }

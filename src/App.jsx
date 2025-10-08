@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { Network, Users, TrendingUp, Database, LayoutDashboard } from 'lucide-react'
+import { Network, Users, Database, LayoutDashboard, Bot } from 'lucide-react'
 import DataSources from './features/documents/DataSources'
 import ViewData from './features/documents/ViewData'
 import CXPage from './cx/CXPage'
 import Dashboard from './features/dashboard/Dashboard'
+import ChatGPTTest from './features/integrations/ChatGPTTest'
 import { mockShipments } from './data/mockShipments'
 
 export default function App() {
@@ -63,12 +64,6 @@ export default function App() {
                   </span>
                 </button>
 
-                <div className="w-full flex items-center gap-3 p-3 rounded-lg opacity-50 cursor-not-allowed">
-                  <TrendingUp size={20} className="flex-shrink-0 text-gray-400" />
-                  <span className={`overflow-hidden transition-all duration-300 whitespace-nowrap text-gray-400 ${isHovered ? 'opacity-100' : 'opacity-0 w-0'}`}>
-                    Markets
-                  </span>
-                </div>
               </div>
             </div>
 
@@ -104,6 +99,18 @@ export default function App() {
                   </span>
                 </button>
 
+                <button 
+                  onClick={() => setActive('chatgpt-test')}
+                  className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all duration-200 ${
+                    active === 'chatgpt-test' ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  <Bot size={20} className="flex-shrink-0" />
+                  <span className={`overflow-hidden transition-all duration-300 whitespace-nowrap ${isHovered ? 'opacity-100' : 'opacity-0 w-0'}`}>
+                    ChatGPT Test
+                  </span>
+                </button>
+
               </div>
             </div>
           </div>
@@ -119,6 +126,10 @@ export default function App() {
       <div className="flex-1 ml-[72px] bg-gray-50 min-h-screen">
         {active === 'customer-experience' ? (
           <CXPage />
+        ) : active === 'chatgpt-test' ? (
+          <div className="p-8 max-w-6xl mx-auto">
+            <ChatGPTTest />
+          </div>
         ) : (
           <div className="p-8 max-w-6xl mx-auto">
             {active === 'dashboard' ? (

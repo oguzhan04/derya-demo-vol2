@@ -1,7 +1,7 @@
 import { LoadStatus, DocumentStatus, TransportMode } from '../types/Load';
 
 // Generate realistic mock loads with complete data structure
-export const mockLoads = [
+export let mockLoads = [
   {
     id: 'LOAD-2024-001',
     route: {
@@ -1808,6 +1808,187 @@ export const mockLoads = [
       ],
       alerts: [],
       recommendations: []
+    },
+    // Customer Quality Data
+    customer: {
+      id: 'CUST-002',
+      name: 'Hamburg Trading GmbH',
+      qualityIndex: {
+        score: 78,
+        metrics: {
+          margin: 22,
+          paySpeed: 18,
+          disputeRate: 0.8,
+          winRate: 94
+        },
+        confidence: 'High',
+        source: 'Historical data analysis'
+      }
+    },
+    // AR Aging Data
+    arAging: {
+      total: 5200,
+      buckets: [
+        { period: '0-30', amount: 3200, invoices: 2 },
+        { period: '31-60', amount: 1500, invoices: 1 },
+        { period: '61-90', amount: 500, invoices: 1 },
+        { period: '90+', amount: 0, invoices: 0 }
+      ],
+      confidence: 'High',
+      source: 'Invoice tracking system'
+    },
+    // Market Lanes Data
+    marketLanes: [
+      {
+        name: 'Shanghai—Los Angeles',
+        yourMargin: 18.5,
+        marketMargin: 17.2,
+        gap: 1.3,
+        onTime: 88,
+        suggestion: null,
+        confidence: 'High',
+        source: 'Market data + Load analysis'
+      }
+    ],
+    // Profit Waterfall Data
+    profitWaterfall: {
+      quote: 4200,
+      carrier: 3800,
+      fees: 180,
+      taxes: 45,
+      clauses: 25,
+      trueNet: 150,
+      missedBilling: 0,
+      missedBillingDetails: 'All fees properly invoiced'
+    }
+  },
+  {
+    id: 'LOAD-2024-003',
+    route: {
+      origin: 'Singapore',
+      destination: 'Rotterdam',
+      mode: TransportMode.OCEAN,
+      distance: 7200,
+      estimatedTransitDays: 22
+    },
+    cargo: {
+      type: 'Pharmaceuticals',
+      value: 125000,
+      weight: 8500,
+      volume: 18,
+      containers: 1,
+      hazardous: false,
+      temperatureControlled: true
+    },
+    status: LoadStatus.PLANNING,
+    createdAt: '2024-01-20T10:00:00Z',
+    updatedAt: '2024-01-20T10:00:00Z',
+    completion: 45,
+    documents: {
+      billOfLading: {
+        status: DocumentStatus.PENDING,
+        files: [],
+        lastUpdated: null
+      },
+      commercialInvoice: {
+        status: DocumentStatus.PENDING,
+        files: [],
+        lastUpdated: null
+      },
+      invoices: {
+        status: DocumentStatus.PENDING,
+        files: [],
+        lastUpdated: null
+      },
+      rateTable: {
+        status: DocumentStatus.PENDING,
+        files: [],
+        lastUpdated: null
+      },
+      quotation: {
+        status: DocumentStatus.PENDING,
+        files: [],
+        lastUpdated: null
+      },
+      booking: {
+        status: DocumentStatus.PENDING,
+        files: [],
+        lastUpdated: null
+      },
+      tracking: {
+        status: DocumentStatus.PENDING,
+        files: [],
+        lastUpdated: null
+      }
+    },
+    analysis: {
+      riskScore: 0.15,
+      predictedCost: 6800,
+      predictedTransitDays: 22,
+      similarLoads: [
+        { id: 'LOAD-2023-045', similarity: 0.88, outcome: 'delivered_on_time' },
+        { id: 'LOAD-2023-112', similarity: 0.82, outcome: 'delayed_2_days' }
+      ],
+      alerts: [
+        { message: 'Temperature-controlled cargo requires special handling', severity: 'medium' },
+        { message: 'Pharmaceuticals require additional documentation', severity: 'high' }
+      ],
+      recommendations: [
+        'Verify temperature control requirements',
+        'Prepare pharmaceutical documentation'
+      ]
+    },
+    // Customer Quality Data
+    customer: {
+      id: 'CUST-003',
+      name: 'Rotterdam Pharma Ltd.',
+      qualityIndex: {
+        score: 92,
+        metrics: {
+          margin: 28,
+          paySpeed: 12,
+          disputeRate: 0.2,
+          winRate: 98
+        },
+        confidence: 'High',
+        source: 'Historical data analysis'
+      }
+    },
+    // AR Aging Data
+    arAging: {
+      total: 1200,
+      buckets: [
+        { period: '0-30', amount: 1200, invoices: 1 },
+        { period: '31-60', amount: 0, invoices: 0 },
+        { period: '61-90', amount: 0, invoices: 0 },
+        { period: '90+', amount: 0, invoices: 0 }
+      ],
+      confidence: 'High',
+      source: 'Invoice tracking system'
+    },
+    // Market Lanes Data
+    marketLanes: [
+      {
+        name: 'Singapore—Rotterdam',
+        yourMargin: 25.5,
+        marketMargin: 24.8,
+        gap: 0.7,
+        onTime: 95,
+        suggestion: null,
+        confidence: 'High',
+        source: 'Market data + Load analysis'
+      }
+    ],
+    // Profit Waterfall Data
+    profitWaterfall: {
+      quote: 6500,
+      carrier: 6800,
+      fees: 320,
+      taxes: 85,
+      clauses: 45,
+      trueNet: 250,
+      missedBilling: 0,
+      missedBillingDetails: 'All fees properly invoiced'
     }
   }
 ];
@@ -1825,4 +2006,20 @@ export const getAllLoads = () => {
 // Helper function to get loads by status
 export const getLoadsByStatus = (status) => {
   return mockLoads.filter(load => load.status === status);
+};
+
+// Helper function to add a new load
+export const addNewLoad = (newLoad) => {
+  mockLoads.push(newLoad);
+  return newLoad;
+};
+
+// Helper function to update an existing load
+export const updateLoad = (loadId, updatedLoad) => {
+  const index = mockLoads.findIndex(load => load.id === loadId);
+  if (index !== -1) {
+    mockLoads[index] = { ...mockLoads[index], ...updatedLoad };
+    return mockLoads[index];
+  }
+  return null;
 };

@@ -24,9 +24,9 @@ export function ContextPanel({ currentLoadData, actionAlerts, timelineItems }) {
           <div className="flex items-center justify-between mb-4">
             <div className="text-sm text-slate-500">Route</div>
             <div className="flex items-center gap-2 text-xs text-slate-500">
-              <span>Progress: 35%</span>
+              <span>Progress: {currentLoadData.progress}%</span>
               <span>•</span>
-              <span>ETA: 12 days</span>
+              <span>ETA: {currentLoadData.remainingDays} days</span>
             </div>
           </div>
           
@@ -40,8 +40,8 @@ export function ContextPanel({ currentLoadData, actionAlerts, timelineItems }) {
                   <div className="w-2 h-2 rounded-full bg-white"></div>
                 </div>
                 <div className="text-center">
-                  <div className="text-sm font-semibold text-slate-800">LA</div>
-                  <div className="text-xs text-slate-500">Los Angeles</div>
+                  <div className="text-sm font-semibold text-slate-800">{currentLoadData.origin.split(' ')[0]}</div>
+                  <div className="text-xs text-slate-500">{currentLoadData.origin}</div>
                 </div>
               </div>
               
@@ -53,7 +53,7 @@ export function ContextPanel({ currentLoadData, actionAlerts, timelineItems }) {
                   <div className="absolute inset-0 border-t-2 border-dashed border-slate-300"></div>
                   
                   {/* Progress straight line */}
-                  <div className="absolute inset-0 border-t-2 border-dashed border-blue-500" style={{width: '35%'}}></div>
+                  <div className="absolute inset-0 border-t-2 border-dashed border-blue-500" style={{width: `${currentLoadData.progress}%`}}></div>
                 </div>
                 
                 {/* Waypoints positioned on straight line */}
@@ -87,8 +87,8 @@ export function ContextPanel({ currentLoadData, actionAlerts, timelineItems }) {
                   <div className="w-2 h-2 rounded-full bg-white"></div>
                 </div>
                 <div className="text-center">
-                  <div className="text-sm font-semibold text-slate-800">Shanghai</div>
-                  <div className="text-xs text-slate-500">China</div>
+                  <div className="text-sm font-semibold text-slate-800">{currentLoadData.destination.split(' ')[0]}</div>
+                  <div className="text-xs text-slate-500">{currentLoadData.destination}</div>
                 </div>
               </div>
             </div>
@@ -96,15 +96,15 @@ export function ContextPanel({ currentLoadData, actionAlerts, timelineItems }) {
             {/* Route details */}
             <div className="mt-6 grid grid-cols-3 gap-4 text-center">
               <div className="p-3 rounded-lg bg-slate-50">
-                <div className="text-lg font-bold text-slate-800">6,500 mi</div>
+                <div className="text-lg font-bold text-slate-800">{currentLoadData.distance.toLocaleString()} mi</div>
                 <div className="text-xs text-slate-500">Distance</div>
               </div>
               <div className="p-3 rounded-lg bg-slate-50">
-                <div className="text-lg font-bold text-blue-600">35%</div>
+                <div className="text-lg font-bold text-blue-600">{currentLoadData.progress}%</div>
                 <div className="text-xs text-slate-500">Complete</div>
               </div>
               <div className="p-3 rounded-lg bg-slate-50">
-                <div className="text-lg font-bold text-emerald-600">12 days</div>
+                <div className="text-lg font-bold text-emerald-600">{currentLoadData.remainingDays} days</div>
                 <div className="text-xs text-slate-500">Remaining</div>
               </div>
             </div>

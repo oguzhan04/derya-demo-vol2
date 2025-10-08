@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { KpiCard } from './components/KpiCard'
 import { HeroProfitChart } from './components/HeroProfitChart'
-import { PeriodSelect, SelectLoad } from './components/HeaderControls'
+import { PeriodSelect, SelectLoad, GenerateReportButton } from './components/HeaderControls'
 import { ContextPanel } from './components/ContextPanel'
 import { TableCard } from './components/TableCard'
 import { ProfitWaterfall } from './components/ProfitWaterfall'
@@ -9,14 +9,28 @@ import { MarketAwareLanes } from './components/MarketAwareLanes'
 import { CustomerQualityIndex } from './components/CustomerQualityIndex'
 import { ARAging } from './components/ARAging'
 import { getAllLoads } from '../../data/mockLoads'
+import { getAllLoads as getPersistedLoads } from '../../services/persistence'
 import { analyzeLoad } from '../../services/analysis'
+import { pdfReportService } from '../../services/pdfReportService'
 
 export default function Dashboard() {
   const [period, setPeriod] = useState('month')
   const [selectedLoad, setSelectedLoad] = useState('LOAD-2024-001')
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false)
   
-  // Get real load data with safety checks
-  const allLoads = getAllLoads()
+  // Get real load data with safety checks - use persisted data if available
+  const persistedLoads = getPersistedLoads()
+  const mockLoads = getAllLoads()
+  const allLoads = persistedLoads && persistedLoads.length > 0 ? persistedLoads : mockLoads
+  
+  console.log('Dashboard data loading:', {
+    refreshKey,
+    persistedCount: persistedLoads?.length || 0,
+    mockCount: mockLoads?.length || 0,
+    usingPersisted: persistedLoads && persistedLoads.length > 0,
+    loadIds: allLoads.map(l => l.id)
+  })
   const currentLoad = allLoads.find(load => load?.id === selectedLoad) || allLoads[0] || {
     id: 'LOAD-2024-001',
     route: { origin: 'Unknown', destination: 'Unknown' },
@@ -26,6 +40,60 @@ export default function Dashboard() {
     completion: 0,
     updatedAt: new Date().toISOString()
   }
+  
+  // Debug: Log when load changes
+  useEffect(() => {
+    console.log('Selected Load Changed:', selectedLoad)
+    console.log('Current Load Data:', currentLoad)
+  }, [selectedLoad, currentLoad])
+  
+  // Refresh data periodically to catch new loads
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setRefreshKey(prev => prev + 1)
+    }, 5000) // Refresh every 5 seconds
+    
+    return () => clearInterval(interval)
+  }, [])
+
+  // Report generation handler
+  const handleGenerateReport = async () => {
+    if (!selectedLoad) {
+      alert('No load selected for report generation');
+      return;
+    }
+
+    setIsGeneratingReport(true);
+    try {
+      // Get lane data for the report
+      const laneData = [
+        {
+          name: `${currentLoad?.route?.origin}—${currentLoad?.route?.destination}`,
+          yourMargin: 18.5,
+          marketMargin: 17.2,
+          gap: 1.3,
+          onTime: 88,
+          suggestion: null,
+          confidence: 'High',
+          source: 'Market data + Load analysis',
+          isCurrent: true,
+          loadId: selectedLoad,
+          customer: currentLoad?.documents?.commercialInvoice?.files?.[0]?.extractedJson?.buyer || 'Unknown',
+          cargo: currentLoad?.cargo?.type || 'Unknown'
+        }
+      ];
+
+      const result = await pdfReportService.generateLaneComparisonReport(selectedLoad, laneData);
+      if (result.success) {
+        alert(`Report generated successfully: ${result.fileName}`);
+      }
+    } catch (error) {
+      console.error('Error generating report:', error);
+      alert('Failed to generate report. Please try again.');
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
   const currentLoadAnalysis = currentLoad ? analyzeLoad(currentLoad) : {
     predictedCost: 1000,
     riskScore: 0.5,
@@ -35,7 +103,7 @@ export default function Dashboard() {
     similarLoads: []
   }
 
-  // Real KPI data based on current load analysis
+  // Dynamic KPI data based on current load analysis
   const kpiData = [
     { 
       label: "Predicted Cost", 
@@ -309,7 +377,52 @@ export default function Dashboard() {
     ]
   }
   
-  const profitWaterfall = generateProfitWaterfall()
+  // Get profit waterfall data from load JSON
+  const profitWaterfallData = currentLoad?.profitWaterfall
+  const profitWaterfall = profitWaterfallData ? [
+    { 
+      step: 'Quote', 
+      value: profitWaterfallData.quote, 
+      delta: 0, 
+      confidence: 'High', 
+      source: 'Load Data' 
+    },
+    { 
+      step: 'Carrier', 
+      value: profitWaterfallData.carrier, 
+      delta: profitWaterfallData.carrier - profitWaterfallData.quote, 
+      confidence: 'High', 
+      source: 'Load Data' 
+    },
+    { 
+      step: 'Fees', 
+      value: profitWaterfallData.fees, 
+      delta: profitWaterfallData.fees - profitWaterfallData.carrier, 
+      confidence: 'Medium', 
+      source: 'Load Data' 
+    },
+    { 
+      step: 'Taxes', 
+      value: profitWaterfallData.taxes, 
+      delta: profitWaterfallData.taxes - profitWaterfallData.fees, 
+      confidence: 'High', 
+      source: 'Load Data' 
+    },
+    { 
+      step: 'Clauses', 
+      value: profitWaterfallData.clauses, 
+      delta: -profitWaterfallData.clauses, 
+      confidence: 'High', 
+      source: 'Load Data' 
+    },
+    { 
+      step: 'True Net', 
+      value: profitWaterfallData.trueNet, 
+      delta: profitWaterfallData.trueNet - profitWaterfallData.quote, 
+      confidence: 'High', 
+      source: 'Load Data' 
+    }
+  ] : generateProfitWaterfall()
 
   // Generate missed billing data from real analysis
   const generateMissedBilling = () => {
@@ -344,7 +457,18 @@ export default function Dashboard() {
     }
   }
   
-  const missedBilling = generateMissedBilling()
+  // Get missed billing data from load JSON
+  const missedBilling = currentLoad?.profitWaterfall?.missedBilling !== undefined ? {
+    total: `$${currentLoad.profitWaterfall.missedBilling}`,
+    breakdown: currentLoad.profitWaterfall.missedBilling > 0 ? [
+      {
+        type: 'Fees',
+        amount: `$${currentLoad.profitWaterfall.missedBilling}`,
+        confidence: 'High',
+        source: currentLoad.profitWaterfall.missedBillingDetails || 'Load Data'
+      }
+    ] : []
+  } : generateMissedBilling()
 
   // Generate market-aware lanes data from real load data
   const generateLanesData = () => {
@@ -408,14 +532,114 @@ export default function Dashboard() {
     )
   }
   
-  const lanesData = generateLanesData()
+  // Extract customer from documents - moved before getAllLanesData
+  const extractCustomerFromLoad = (load) => {
+    // Try to get customer from commercial invoice
+    const invoiceCustomer = load?.documents?.commercialInvoice?.files?.[0]?.extractedData?.buyer
+    if (invoiceCustomer) return invoiceCustomer
+    
+    // Try to get customer from bill of lading
+    const blCustomer = load?.documents?.billOfLading?.files?.[0]?.extractedData?.consignee
+    if (blCustomer) return blCustomer
+    
+    // Try to get customer from quotation
+    const quoteCustomer = load?.documents?.quotation?.files?.[0]?.extractedData?.customer
+    if (quoteCustomer) return quoteCustomer
+    
+    return 'Unknown Customer'
+  }
+  
+  // Get all historical lanes data with current load highlighted and sorted to top
+  const getAllLanesData = () => {
+    const allLanesData = []
+    
+    // Generate dynamic lanes based on current load and similar routes
+    const currentRoute = `${currentLoad?.route?.origin || 'Unknown'} - ${currentLoad?.route?.destination || 'Unknown'}`
+    
+    // Add current load's lane
+    if (currentLoad) {
+      allLanesData.push({
+        name: currentRoute,
+        yourMargin: Math.round((Math.random() * 10 + 15) * 10) / 10, // 15-25%
+        marketMargin: Math.round((Math.random() * 8 + 12) * 10) / 10, // 12-20%
+        gap: Math.round((Math.random() * 3 - 1) * 10) / 10, // -1 to +2%
+        onTime: Math.round(Math.random() * 15 + 85), // 85-100%
+        confidence: 'High',
+        loadId: currentLoad.id,
+        isCurrent: true,
+        customer: extractCustomerFromLoad(currentLoad),
+        cargo: currentLoad.cargo?.type || 'Unknown'
+      })
+    }
+    
+    // Add similar routes from other loads (limit to 8 additional lanes)
+    const otherLoads = allLoads.filter(load => load.id !== selectedLoad && load.route).slice(0, 8)
+    otherLoads.forEach(load => {
+      const route = `${load.route.origin} - ${load.route.destination}`
+      allLanesData.push({
+        name: route,
+        yourMargin: Math.round((Math.random() * 10 + 15) * 10) / 10,
+        marketMargin: Math.round((Math.random() * 8 + 12) * 10) / 10,
+        gap: Math.round((Math.random() * 3 - 1) * 10) / 10,
+        onTime: Math.round(Math.random() * 15 + 85),
+        confidence: 'Medium',
+        loadId: load.id,
+        isCurrent: false,
+        customer: extractCustomerFromLoad(load),
+        cargo: load.cargo?.type || 'Unknown'
+      })
+    })
+    
+    // Add some popular trade lanes if we don't have enough
+    if (allLanesData.length < 6) {
+      const popularLanes = [
+        { origin: 'Singapore', destination: 'Rotterdam' },
+        { origin: 'Dubai', destination: 'Hamburg' },
+        { origin: 'Bangkok', destination: 'Miami' },
+        { origin: 'Melbourne', destination: 'Long Beach' },
+        { origin: 'Tokyo', destination: 'Seattle' }
+      ]
+      
+      popularLanes.forEach((lane, idx) => {
+        if (allLanesData.length < 10) {
+          allLanesData.push({
+            name: `${lane.origin} - ${lane.destination}`,
+            yourMargin: Math.round((Math.random() * 10 + 15) * 10) / 10,
+            marketMargin: Math.round((Math.random() * 8 + 12) * 10) / 10,
+            gap: Math.round((Math.random() * 3 - 1) * 10) / 10,
+            onTime: Math.round(Math.random() * 15 + 85),
+            confidence: 'Medium',
+            loadId: `SAMPLE-${idx + 1}`,
+            isCurrent: false,
+            customer: 'Sample Customer',
+            cargo: 'General Cargo'
+          })
+        }
+      })
+    }
+    
+    // Sort to put current load lanes at the top
+    return allLanesData.sort((a, b) => {
+      if (a.isCurrent && !b.isCurrent) return -1
+      if (!a.isCurrent && b.isCurrent) return 1
+      return 0
+    })
+  }
+  
+  const lanesData = getAllLanesData()
 
   // Current load with real data - with safety checks
   const currentLoadData = {
     route: `${currentLoad?.route?.origin || 'Unknown'} → ${currentLoad?.route?.destination || 'Unknown'}`,
-    customer: currentLoad?.documents?.commercialInvoice?.files?.[0]?.extractedJson?.buyer || 'Unknown',
+    customer: extractCustomerFromLoad(currentLoad),
     cargo: `${currentLoad?.cargo?.type || 'Unknown'} (${currentLoad?.cargo?.weight || 0}kg)`,
     risk: currentLoadAnalysis?.riskScore || 0,
+    // Dynamic route data
+    origin: currentLoad?.route?.origin || 'Unknown',
+    destination: currentLoad?.route?.destination || 'Unknown',
+    distance: currentLoad?.route?.distance || 0,
+    progress: currentLoad?.completion || 0,
+    remainingDays: currentLoadAnalysis?.predictedTransitDays || 0,
     provenance: {
       hbl: currentLoad?.documents?.billOfLading?.files?.[0]?.extractedJson?.vessel || 'N/A',
       invoice: currentLoad?.documents?.commercialInvoice?.files?.[0]?.extractedJson?.invoiceNumber || 'N/A',
@@ -430,7 +654,7 @@ export default function Dashboard() {
 
   // Generate customer quality data from real load data
   const generateCustomerQuality = () => {
-    const customer = currentLoad?.documents?.commercialInvoice?.files?.[0]?.extractedJson?.buyer || 'Unknown'
+    const customer = extractCustomerFromLoad(currentLoad)
     const margin = (currentLoadAnalysis?.predictedCost * 0.15) / (currentLoadAnalysis?.predictedCost || 1) * 100
     const paySpeed = 10 + Math.random() * 20 // 10-30 days based on cargo value
     const disputeRate = (currentLoadAnalysis?.riskScore || 0) > 0.7 ? 3.5 + Math.random() * 2 : 1.5 + Math.random() * 1.5
@@ -457,7 +681,100 @@ export default function Dashboard() {
     }
   }
   
-  const customerQuality = generateCustomerQuality()
+  // Get all historical customer quality data with current highlighted and sorted to top
+  const getAllCustomerQualityData = () => {
+    const allCustomerData = []
+    const customerMap = new Map()
+    
+    // Collect unique customers from all loads
+    allLoads.forEach(load => {
+      const customer = extractCustomerFromLoad(load)
+      if (customer && customer !== 'Unknown Customer') {
+        if (!customerMap.has(customer)) {
+          customerMap.set(customer, {
+            customerName: customer,
+            loads: [],
+            totalValue: 0,
+            totalMargin: 0,
+            totalOnTime: 0,
+            totalDisputes: 0
+          })
+        }
+        
+        const customerData = customerMap.get(customer)
+        customerData.loads.push(load)
+        customerData.totalValue += currentLoadAnalysis?.predictedCost || 0
+        customerData.totalMargin += Math.random() * 10 + 15 // 15-25%
+        customerData.totalOnTime += Math.random() * 15 + 85 // 85-100%
+        customerData.totalDisputes += Math.random() * 2 // 0-2%
+      }
+    })
+    
+    // Add some sample customers if we don't have enough variety
+    if (customerMap.size < 3) {
+      const sampleCustomers = [
+        { name: 'Pacific Ocean Shipping Co.', margin: 18.5, onTime: 92, disputes: 0.8, winRate: 95 },
+        { name: 'Derya Maritime Solutions Ltd.', margin: 22.3, onTime: 88, disputes: 1.2, winRate: 89 },
+        { name: 'Global Logistics Partners', margin: 16.8, onTime: 85, disputes: 2.1, winRate: 82 }
+      ]
+      
+      sampleCustomers.forEach(sample => {
+        if (!customerMap.has(sample.name)) {
+          customerMap.set(sample.name, {
+            customerName: sample.name,
+            loads: [],
+            totalValue: 0,
+            totalMargin: sample.margin,
+            totalOnTime: sample.onTime,
+            totalDisputes: sample.disputes
+          })
+        }
+      })
+    }
+    
+    // Generate quality scores for each customer
+    customerMap.forEach((customerData, customerName) => {
+      const loadCount = customerData.loads.length
+      const avgMargin = customerData.totalMargin / loadCount
+      const avgOnTime = customerData.totalOnTime / loadCount
+      const avgDisputes = customerData.totalDisputes / loadCount
+      const winRate = Math.max(0, 100 - avgDisputes * 20)
+      
+      // Calculate overall score
+      const score = Math.round(
+        (avgMargin / 25 * 30) + // Margin component
+        (avgOnTime / 100 * 25) + // On-time component
+        ((5 - avgDisputes) / 5 * 25) + // Dispute rate component
+        (winRate / 100 * 20) // Win rate component
+      )
+      
+      allCustomerData.push({
+        customerId: customerName.replace(/\s+/g, '').toLowerCase(),
+        customerName: customerName,
+        score: Math.max(0, Math.min(100, score)),
+        metrics: {
+          margin: Math.round(avgMargin * 10) / 10,
+          onTime: Math.round(avgOnTime),
+          disputes: Math.round(avgDisputes * 10) / 10,
+          winRate: Math.round(winRate)
+        },
+        confidence: loadCount > 1 ? 'High' : 'Medium',
+        loadCount: loadCount,
+        isCurrent: customerName === extractCustomerFromLoad(currentLoad),
+        route: `${currentLoad?.route?.origin || 'Unknown'} → ${currentLoad?.route?.destination || 'Unknown'}`,
+        cargo: currentLoad?.cargo?.type || 'Unknown'
+      })
+    })
+    
+    // Sort to put current load customer at the top, then by score
+    return allCustomerData.sort((a, b) => {
+      if (a.isCurrent && !b.isCurrent) return -1
+      if (!a.isCurrent && b.isCurrent) return 1
+      return b.score - a.score
+    })
+  }
+  
+  const customerQualityData = getAllCustomerQualityData()
 
   // Generate AR aging data from real invoice data
   const generateARAging = () => {
@@ -498,31 +815,65 @@ export default function Dashboard() {
     }
   }
   
-  const arAging = generateARAging()
+  // Get AR aging data from load JSON
+  const arAging = currentLoad?.arAging || {
+    total: 1000,
+    buckets: [
+      { period: '0-30', amount: 1000, invoices: 1 },
+      { period: '31-60', amount: 0, invoices: 0 },
+      { period: '61-90', amount: 0, invoices: 0 },
+      { period: '90+', amount: 0, invoices: 0 }
+    ],
+    confidence: 'Medium',
+    source: 'Default data'
+  }
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
       {/* Header Bar */}
-      <div className="flex items-center justify-between mb-8 p-6 bg-gradient-to-r from-slate-50 to-white rounded-2xl border border-slate-200 shadow-lg">
-        <div className="flex items-center gap-4">
-          <div className="p-3 rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 shadow-lg">
-            <svg className="h-8 w-8 text-white" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-            </svg>
+      <div className="mb-8 p-6 bg-gradient-to-r from-slate-50 to-white rounded-2xl border border-slate-200 shadow-lg">
+        {/* Top Row - Branding and Period */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-4">
+            <div className="p-3 rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 shadow-lg">
+              <svg className="h-8 w-8 text-white" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+              </svg>
+            </div>
+            <div>
+              <div className="text-3xl font-bold text-slate-800">Derya AI</div>
+              <div className="text-sm text-slate-500 font-medium">Forwarder Dashboard</div>
+            </div>
           </div>
-          <div>
-            <div className="text-3xl font-bold text-slate-800">Derya AI</div>
-            <div className="text-sm text-slate-500 font-medium">Forwarder Dashboard</div>
+          <div className="flex items-center gap-4">
+            <PeriodSelect period={period} onPeriodChange={setPeriod} />
+            <GenerateReportButton 
+              currentLoadId={selectedLoad}
+              onGenerateReport={handleGenerateReport}
+              isGenerating={isGeneratingReport}
+            />
           </div>
         </div>
-        <div className="flex items-center gap-6">
-          <SelectLoad selectedLoad={selectedLoad} onLoadChange={setSelectedLoad} />
-          <PeriodSelect period={period} onPeriodChange={setPeriod} />
+        
+        {/* Bottom Row - Route Info and Load Selector */}
+        <div className="flex items-center justify-between">
+          <div className="flex-1 mr-6">
+            <div className="text-sm text-slate-600">
+              <span className="font-medium">Current Route:</span> {currentLoad?.route?.origin} → {currentLoad?.route?.destination}
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <SelectLoad 
+              selectedLoad={selectedLoad} 
+              onLoadChange={setSelectedLoad} 
+              availableLoads={allLoads}
+            />
+          </div>
         </div>
       </div>
 
       {/* Current Load - Full Width with Integrated Actions & Timeline */}
-      <div className="mb-6">
+      <div className="mb-6" key={`context-${selectedLoad}`}>
         <ContextPanel 
           currentLoadData={currentLoadData} 
           actionAlerts={actionAlerts}
@@ -533,21 +884,21 @@ export default function Dashboard() {
       {/* KPI Row */}
       <div className="grid grid-cols-4 gap-6 mb-6">
         {kpiData.map((kpi, idx) => (
-          <KpiCard key={idx} {...kpi} />
+          <KpiCard key={`${selectedLoad}-${idx}`} {...kpi} />
         ))}
       </div>
 
       {/* True Profit Waterfall */}
-      <div className="mb-6">
+      <div className="mb-6" key={`profit-${selectedLoad}`}>
         <ProfitWaterfall data={profitWaterfall} missedBilling={missedBilling} />
       </div>
 
       {/* Bottom Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <MarketAwareLanes data={lanesData} />
+        <MarketAwareLanes key={`lanes-${selectedLoad}`} data={lanesData} currentLoadId={selectedLoad} />
         <div className="space-y-4">
-          <CustomerQualityIndex data={customerQuality} />
-          <ARAging data={arAging} />
+          <CustomerQualityIndex key={`quality-${selectedLoad}`} data={customerQualityData} currentLoadId={selectedLoad} />
+          <ARAging key={`aging-${selectedLoad}`} data={arAging} />
         </div>
       </div>
     </div>

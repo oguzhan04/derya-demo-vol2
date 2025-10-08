@@ -1,6 +1,6 @@
 import { User, TrendingUp, Clock, AlertTriangle, Target } from "lucide-react";
 
-export function CustomerQualityIndex({ data }) {
+export function CustomerQualityIndex({ data, currentLoadId }) {
   const getScoreColor = (score) => {
     if (score >= 80) return 'text-emerald-600 bg-emerald-100';
     if (score >= 60) return 'text-amber-600 bg-amber-100';
@@ -24,59 +24,87 @@ export function CustomerQualityIndex({ data }) {
         </div>
         <div>
           <div className="text-lg font-bold text-slate-800">Customer Quality Index</div>
-          <div className="text-xs text-slate-500">Current customer performance</div>
+          <div className="text-xs text-slate-500">All customer performance history</div>
         </div>
       </div>
       
-      <div className="text-center mb-4">
-        <div className="text-3xl font-bold text-slate-800 mb-1">{data.score}/100</div>
-        <span className={`px-3 py-1 rounded-full text-sm font-medium ${getScoreColor(data.score)}`}>
-          {data.score >= 80 ? 'Excellent' : data.score >= 60 ? 'Good' : 'Needs Attention'}
-        </span>
+      <div className="space-y-3 max-h-80 overflow-y-auto">
+        {data.slice(0, 4).map((customer, idx) => (
+          <div 
+            key={`${customer.customerId}-${idx}`}
+            className={`p-4 rounded-lg border transition-all duration-200 ${
+              customer.isCurrent 
+                ? 'bg-blue-50 border-blue-200 shadow-md ring-2 ring-blue-200' 
+                : 'bg-white border-slate-100 hover:shadow-sm'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <User className="h-4 w-4 text-slate-600" />
+                <span className="font-semibold text-slate-800">{customer.customerName}</span>
+                {customer.isCurrent && (
+                  <span className="px-2 py-1 bg-blue-600 text-white text-xs font-medium rounded-full">
+                    Current
+                  </span>
+                )}
+              </div>
+              <div className="text-right">
+                <div className="text-lg font-bold text-slate-800">{customer.score}/100</div>
+                <span className={`px-2 py-1 rounded-full text-xs font-medium ${getScoreColor(customer.score)}`}>
+                  {customer.score >= 80 ? 'Excellent' : customer.score >= 60 ? 'Good' : 'Needs Attention'}
+                </span>
+              </div>
+            </div>
+            
+            <div className="text-xs text-slate-500 mb-2">
+              {customer.route} • {customer.cargo} • {customer.loadId}
+            </div>
+            
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1">
+                  <TrendingUp className="h-3 w-3 text-slate-600" />
+                  <span className="text-xs text-slate-600">Margin</span>
+                </div>
+                <span className="text-xs font-semibold text-slate-800">{customer.metrics.margin}%</span>
+              </div>
+              
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1">
+                  <Clock className="h-3 w-3 text-slate-600" />
+                  <span className="text-xs text-slate-600">Pay Speed</span>
+                </div>
+                <span className="text-xs font-semibold text-slate-800">{customer.metrics.paySpeed}d</span>
+              </div>
+              
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3 text-slate-600" />
+                  <span className="text-xs text-slate-600">Disputes</span>
+                </div>
+                <span className="text-xs font-semibold text-slate-800">{customer.metrics.disputeRate}%</span>
+              </div>
+              
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1">
+                  <Target className="h-3 w-3 text-slate-600" />
+                  <span className="text-xs text-slate-600">Win Rate</span>
+                </div>
+                <span className="text-xs font-semibold text-slate-800">{customer.metrics.winRate}%</span>
+              </div>
+            </div>
+            
+            <div className="flex items-center justify-between">
+              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getConfidenceColor(customer.confidence)}`}>
+                {customer.confidence}
+              </span>
+              <span className="text-xs text-slate-500">{customer.source}</span>
+            </div>
+          </div>
+        ))}
       </div>
       
-      <div className="space-y-3 mb-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-slate-600" />
-            <span className="text-sm text-slate-600">Margin</span>
-          </div>
-          <span className="text-sm font-semibold text-slate-800">{data.metrics.margin}%</span>
-        </div>
-        
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Clock className="h-4 w-4 text-slate-600" />
-            <span className="text-sm text-slate-600">Pay Speed</span>
-          </div>
-          <span className="text-sm font-semibold text-slate-800">{data.metrics.paySpeed} days</span>
-        </div>
-        
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-slate-600" />
-            <span className="text-sm text-slate-600">Dispute Rate</span>
-          </div>
-          <span className="text-sm font-semibold text-slate-800">{data.metrics.disputeRate}%</span>
-        </div>
-        
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Target className="h-4 w-4 text-slate-600" />
-            <span className="text-sm text-slate-600">Win Rate</span>
-          </div>
-          <span className="text-sm font-semibold text-slate-800">{data.metrics.winRate}%</span>
-        </div>
-      </div>
-      
-      <div className="flex items-center gap-2 mb-3">
-        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getConfidenceColor(data.confidence)}`}>
-          {data.confidence}
-        </span>
-        <span className="text-xs text-slate-500">{data.source}</span>
-      </div>
-      
-      <button className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors text-sm font-medium">
+      <button className="w-full mt-4 flex items-center justify-center gap-2 px-3 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors text-sm font-medium">
         <Target className="h-4 w-4" />
         Adjust Terms
       </button>
