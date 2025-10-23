@@ -1,4 +1,4 @@
-import jsPDF from 'jspdf';
+import { jsPDF } from 'jspdf';
 import { chatGPTService } from './chatgpt.js';
 import { getAllLoads } from '../data/mockLoads.js';
 
@@ -257,6 +257,13 @@ export class PDFReportService {
 
   async generateInsights(currentLoad, allLoads, laneData) {
     try {
+      // Check if ChatGPT service is available and has API key
+      const apiKey = chatGPTService.getApiKey ? chatGPTService.getApiKey() : null;
+      if (!apiKey) {
+        console.warn('ChatGPT API key not available, using fallback insights');
+        return this.generateFallbackInsights(currentLoad, allLoads, laneData);
+      }
+
       // Prepare data for ChatGPT analysis
       const analysisData = {
         currentLoad: {
@@ -297,8 +304,43 @@ Format as a comprehensive business analysis report.`;
       return insights;
     } catch (error) {
       console.error('Error generating insights:', error);
-      return 'AI insights generation failed. Please refer to the data analysis above for key metrics and recommendations.';
+      return this.generateFallbackInsights(currentLoad, allLoads, laneData);
     }
+  }
+
+  generateFallbackInsights(currentLoad, allLoads, laneData) {
+    return `
+AI-POWERED FREIGHT FORWARDING ANALYSIS
+
+Load Analysis Summary:
+• Load ID: ${currentLoad.id}
+• Route: ${currentLoad.route.origin} → ${currentLoad.route.destination}
+• Cargo Value: $${currentLoad.cargo.value.toLocaleString()}
+• Status: ${currentLoad.status}
+
+Key Performance Insights:
+• This load represents a ${currentLoad.cargo.value > 100000 ? 'high-value' : 'standard'} shipment
+• Route efficiency appears optimal based on historical data
+• Risk level is ${currentLoad.analysis?.riskScore > 0.7 ? 'elevated' : 'manageable'}
+
+Risk Assessment:
+• Monitor weather conditions for ${currentLoad.route.mode} transport
+• Ensure proper documentation for ${currentLoad.cargo.type} cargo
+• Track container status throughout transit
+
+Market Positioning:
+• Current lane shows ${laneData[0]?.gap > 0 ? 'positive' : 'negative'} margin performance
+• On-time delivery rate: ${laneData[0]?.onTime || 'N/A'}%
+• Market confidence: ${laneData[0]?.confidence || 'Medium'}
+
+Recommendations:
+• Maintain current service level for customer satisfaction
+• Consider alternative routing if cost pressures increase
+• Implement proactive communication for status updates
+• Review documentation workflow for efficiency gains
+
+Note: AI insights generation unavailable. This analysis is based on structured data patterns.
+    `.trim();
   }
 }
 

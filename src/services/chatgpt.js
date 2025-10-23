@@ -15,6 +15,10 @@ export class ChatGPTService {
     }
   }
 
+  getApiKey() {
+    return getApiKey();
+  }
+
   async analyzeDocument(documentText, documentType = 'freight') {
     const apiKey = getApiKey();
     if (!apiKey) {
