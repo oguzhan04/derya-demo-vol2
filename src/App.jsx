@@ -1,10 +1,12 @@
 import { useState } from 'react'
-import { Network, Users, Database, LayoutDashboard, Bot } from 'lucide-react'
+import { Network, Users, Database, LayoutDashboard, Bot, Settings, Wrench } from 'lucide-react'
 import DataSources from './features/documents/DataSources'
 import ViewData from './features/documents/ViewData'
 import CXPage from './cx/CXPage'
 import Dashboard from './features/dashboard/Dashboard'
 import ChatGPTTest from './features/integrations/ChatGPTTest'
+import ManageAgents from './features/agents/ManageAgents'
+import AgentBuilder from './features/agents/AgentBuilder'
 import { mockShipments } from './data/mockShipments'
 
 export default function App() {
@@ -111,6 +113,30 @@ export default function App() {
                   </span>
                 </button>
 
+                <button 
+                  onClick={() => setActive('manage-agents')}
+                  className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all duration-200 ${
+                    active === 'manage-agents' ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  <Settings size={20} className="flex-shrink-0" />
+                  <span className={`overflow-hidden transition-all duration-300 whitespace-nowrap ${isHovered ? 'opacity-100' : 'opacity-0 w-0'}`}>
+                    Manage Agents
+                  </span>
+                </button>
+
+                <button 
+                  onClick={() => setActive('agent-builder')}
+                  className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all duration-200 ${
+                    active === 'agent-builder' ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  <Wrench size={20} className="flex-shrink-0" />
+                  <span className={`overflow-hidden transition-all duration-300 whitespace-nowrap ${isHovered ? 'opacity-100' : 'opacity-0 w-0'}`}>
+                    Agent Builder
+                  </span>
+                </button>
+
               </div>
             </div>
           </div>
@@ -130,6 +156,12 @@ export default function App() {
           <div className="p-8 max-w-6xl mx-auto">
             <ChatGPTTest />
           </div>
+        ) : active === 'manage-agents' ? (
+          <div className="p-8 max-w-6xl mx-auto">
+            <ManageAgents />
+          </div>
+        ) : active === 'agent-builder' ? (
+          <AgentBuilder />
         ) : (
           <div className="p-8 max-w-6xl mx-auto">
             {active === 'dashboard' ? (
