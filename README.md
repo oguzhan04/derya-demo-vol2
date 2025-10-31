@@ -262,46 +262,99 @@ The system automatically deduplicates notifications:
 
 ## Getting Started
 
+### Local Development with Full Functionality
+
+For full functionality including API endpoints:
+
 1. **Install Dependencies**
    ```bash
    npm install
    ```
 
-2. **Set Environment Variables**
+2. **Set Environment Variables** (Optional but recommended)
+   Create a `.env` file in the project root:
    ```bash
-   cp .env.example .env.local
-   # Add your OpenAI API key and Vercel Blob token
+   # OpenAI API Key (required for embeddings and AI briefs)
+   OPENAI_API_KEY=sk-your-openai-api-key-here
+   
+   # Vercel Blob Token (optional - required for RAG document storage)
+   BLOB_READ_WRITE_TOKEN=vercel_blob_rw_your-token-here
+   
+   # API Server Port (optional, defaults to 3001)
+   API_PORT=3001
    ```
+   
+   **Note**: You can also configure the OpenAI API key in the app settings UI. The API will work without environment variables but will have limited functionality (no AI briefs or document indexing).
 
-3. **Start Development Server**
+3. **Start Development Servers**
    ```bash
    npm run dev
    ```
+   
+   This starts both:
+   - **Frontend server** on http://localhost:5173 (Vite)
+   - **API server** on http://localhost:3001 (Express)
+   - API requests from frontend are automatically proxied to the API server
 
 4. **Access the Application**
-   - Open http://localhost:5173
+   - Open http://localhost:5173 in your browser
    - Navigate to "Customer Experience" in the sidebar
-   - Click "Analyze Now" to see demo notifications
+   - Click "Analyze Now" to see notifications and scores
+   - API endpoints will work seamlessly through the proxy
+
+### Development Scripts
+
+- `npm run dev` - Runs both frontend and API server concurrently
+- `npm run dev:frontend` - Runs only the Vite frontend server
+- `npm run dev:api` - Runs only the API server
+- `npm run build` - Build for production
 
 ## Deployment
 
-Deploy to Vercel with zero configuration:
+### Deploy to Vercel
 
+The application is fully compatible with Vercel. The Express server (`server.js`) is only for local development - Vercel will automatically use the Edge Runtime API handlers in the `api/` directory.
+
+**Option 1: Deploy via Vercel CLI**
 ```bash
 npm run build
 vercel --prod
 ```
+
+**Option 2: Deploy via Vercel Dashboard**
+1. Push your code to GitHub
+2. Import the repository in Vercel
+3. Vercel will auto-detect the configuration
+4. Add environment variables:
+   - `OPENAI_API_KEY`
+   - `BLOB_READ_WRITE_TOKEN` (optional)
+5. Deploy!
+
+**Important Notes:**
+- The `server.js` file is ignored on Vercel (only used locally)
+- API routes in `api/` automatically become Vercel Edge Functions
+- The frontend is built with Vite and served as static files
+- Environment variables should be set in Vercel dashboard
 
 The application is optimized for Vercel Free tier with Edge Runtime and efficient resource usage.
 
 ## Architecture
 
 - **Frontend**: React + Vite + Tailwind CSS
-- **Backend**: Next.js API Routes with Edge Runtime
+- **Backend**: 
+  - **Local Development**: Express server wrapping Edge Runtime handlers
+  - **Production**: Vercel Edge Runtime (deployed on Vercel)
 - **AI**: OpenAI GPT-4o-mini + text-embedding-3-small
-- **Storage**: Vercel Blob for document indexes
+- **Storage**: Vercel Blob for document indexes (production) / In-memory (local dev)
 - **Validation**: Zod schemas for type safety
 - **State**: React hooks + localStorage for settings
+
+### Local vs Production
+
+The API handlers are designed for Vercel Edge Runtime, but for local development:
+- A local Express server (`server.js`) wraps the Edge Runtime handlers
+- Vite proxies `/api/*` requests to the local API server
+- Both servers run concurrently when using `npm run dev`
 
 ## Contributing
 
