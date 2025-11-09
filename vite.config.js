@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
+<<<<<<< HEAD
     port: 5173,
     proxy: {
       '/api': {
@@ -21,6 +22,15 @@ export default defineConfig({
         }
       }
     }
+=======
+    // Only proxy in development (local server)
+    proxy: process.env.NODE_ENV === 'development' ? {
+      '/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      }
+    } : undefined
+>>>>>>> d75be3cf34afe3783ab8f88ef92f1a0e9b88a7f9
   },
   build: {
     rollupOptions: {

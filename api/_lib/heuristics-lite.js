@@ -616,3 +616,60 @@ function checkExceptionStreak(shipments) {
   }
   return null;
 }
+
+function checkSentimentDecline(comms) {
+  if (!comms || comms.length < 3) {
+    return null; // Need at least 3 communications to detect a trend
+  }
+
+  // Sort communications by time (oldest first)
+  const sortedComms = [...comms].sort((a, b) => 
+    new Date(a.timestamp || a.createdAt || 0) - new Date(b.timestamp || b.createdAt || 0)
+  );
+
+  // Simple sentiment detection: look for negative keywords
+  const negativeKeywords = ['problem', 'issue', 'delay', 'late', 'concern', 'worried', 'unhappy', 'disappointed', 'frustrated'];
+  const positiveKeywords = ['great', 'thanks', 'happy', 'satisfied', 'excellent', 'pleased', 'appreciate'];
+
+  // Split into two halves
+  const midpoint = Math.floor(sortedComms.length / 2);
+  const olderHalf = sortedComms.slice(0, midpoint);
+  const newerHalf = sortedComms.slice(midpoint);
+
+  const getSentimentScore = (comms) => {
+    let score = 0;
+    comms.forEach(comm => {
+      const text = (comm.body || comm.content || comm.message || '').toLowerCase();
+      negativeKeywords.forEach(keyword => {
+        if (text.includes(keyword)) score -= 1;
+      });
+      positiveKeywords.forEach(keyword => {
+        if (text.includes(keyword)) score += 1;
+      });
+    });
+    return score;
+  };
+
+  const olderScore = getSentimentScore(olderHalf);
+  const newerScore = getSentimentScore(newerHalf);
+
+  // If sentiment declined significantly (negative trend)
+  if (newerScore < olderScore - 2) {
+    const dealId = sortedComms[0]?.entityId || sortedComms[0]?.dealId;
+    return {
+      id: `sentiment-decline-${dealId}`,
+      type: 'sentiment_decline',
+      severity: 'medium',
+      entity: { kind: 'deal', id: dealId, name: `Deal ${dealId}` },
+      message: 'Negative sentiment trend detected in recent communications',
+      time: new Date().toISOString(),
+      metadata: {
+        olderSentiment: olderScore,
+        newerSentiment: newerScore,
+        decline: olderScore - newerScore
+      }
+    };
+  }
+
+  return null;
+}

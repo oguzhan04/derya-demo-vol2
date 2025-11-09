@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { 
   Mail, 
   MessageSquare, 
@@ -13,8 +13,20 @@ import {
   Trash2,
   MousePointer,
   Eye,
-  EyeOff
+  EyeOff,
+  Upload,
+  FolderOpen,
+  X,
+  Settings,
+  Link as LinkIcon
 } from 'lucide-react'
+import { 
+  saveWorkflow as persistWorkflow, 
+  loadWorkflows, 
+  createWorkflow,
+  importWorkflow,
+  deleteWorkflow as deletePersistedWorkflow
+} from '../../services/workflowPersistence'
 
 const nodeTypes = [
   {
@@ -173,26 +185,77 @@ const workflowTemplates = [
   }
 ]
 
+// Helper function to draw SVG path between nodes
+const getConnectionPath = (fromNode, toNode) => {
+  const fromX = fromNode.x + fromNode.width / 2
+  const fromY = fromNode.y + fromNode.height
+  const toX = toNode.x + toNode.width / 2
+  const toY = toNode.y
+  
+  const midY = (fromY + toY) / 2
+  
+  return `M ${fromX} ${fromY} C ${fromX} ${midY} ${toX} ${midY} ${toX} ${toY}`
+}
+
 export default function AgentBuilder() {
   const [nodes, setNodes] = useState([])
+  const [connections, setConnections] = useState([])
   const [selectedNode, setSelectedNode] = useState(null)
   const [showGrid, setShowGrid] = useState(true)
   const [selectedCategory, setSelectedCategory] = useState('All')
+  const [workflowName, setWorkflowName] = useState('Untitled Workflow')
+  const [currentWorkflowId, setCurrentWorkflowId] = useState(null)
+  const [savedWorkflows, setSavedWorkflows] = useState([])
+  const [showLoadDialog, setShowLoadDialog] = useState(false)
+  const [connectingFrom, setConnectingFrom] = useState(null)
+  const [draggingNode, setDraggingNode] = useState(null)
+  const [nodeConfig, setNodeConfig] = useState({})
+  const [isDragging, setIsDragging] = useState(false)
   const canvasRef = useRef(null)
+  const fileInputRef = useRef(null)
+  
+  // Use refs for drag state to avoid re-render issues
+  const dragStateRef = useRef({
+    node: null,
+    offset: { x: 0, y: 0 },
+    startPos: { x: 0, y: 0 }
+  })
+
+  // Load saved workflows on mount
+  useEffect(() => {
+    const workflows = loadWorkflows()
+    setSavedWorkflows(workflows)
+  }, [])
 
   const addNode = (type, x, y) => {
-    const newNode = {
-      id: `node-${Date.now()}`,
-      type: type.id,
-      name: type.name,
-      icon: type.icon,
-      color: type.color,
-      x: x - 60,
-      y: y - 40,
-      width: 120,
-      height: 80
+    try {
+      if (!type || !type.id) {
+        console.error('Invalid node type:', type)
+        return
+      }
+      
+      const nodeType = nodeTypes.find(nt => nt.id === type.id)
+      if (!nodeType) {
+        console.error('Node type not found:', type.id)
+        return
+      }
+      
+      const newNode = {
+        id: `node-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        type: type.id,
+        name: type.name || nodeType.name,
+        icon: nodeType.icon,
+        color: nodeType.color,
+        x: Math.max(0, x - 60),
+        y: Math.max(0, y - 40),
+        width: 120,
+        height: 80,
+        config: {}
+      }
+      setNodes(prevNodes => [...prevNodes, newNode])
+    } catch (error) {
+      console.error('Error adding node:', error)
     }
-    setNodes([...nodes, newNode])
   }
 
   const loadTemplate = (template) => {
@@ -207,10 +270,19 @@ export default function AgentBuilder() {
         x: nodeTemplate.x,
         y: nodeTemplate.y,
         width: 120,
-        height: 80
+        height: 80,
+        config: {}
       }
     })
-    setNodes([...nodes, ...templateNodes])
+    setNodes(templateNodes)
+    
+    // Create connections from template
+    const templateConnections = template.connections.map(conn => ({
+      id: `conn-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      from: templateNodes[conn.from]?.id,
+      to: templateNodes[conn.to]?.id
+    })).filter(c => c.from && c.to)
+    setConnections(templateConnections)
   }
 
   const categories = ['All', 'Customer Service', 'E-commerce', 'Support', 'Marketing', 'Operations', 'Scheduling']
@@ -221,227 +293,713 @@ export default function AgentBuilder() {
   const handleCanvasClick = (e) => {
     if (e.target === canvasRef.current) {
       setSelectedNode(null)
+      setConnectingFrom(null)
     }
   }
 
   const handleNodeClick = (node, e) => {
     e.stopPropagation()
-    setSelectedNode(node)
+    
+    // Don't handle click if we actually dragged (moved more than 5px)
+    if (isDragging || draggingNode) {
+      const dragState = dragStateRef.current
+      if (dragState.node && dragState.startPos) {
+        const moved = Math.abs(e.clientX - dragState.startPos.x) > 5 || Math.abs(e.clientY - dragState.startPos.y) > 5
+        if (moved) {
+          return
+        }
+      }
+    }
+    
+    if (connectingFrom) {
+      // Creating a connection
+      if (connectingFrom !== node.id) {
+        // Check if connection already exists
+        const exists = connections.some(c => 
+          (c.from === connectingFrom && c.to === node.id) ||
+          (c.from === node.id && c.to === connectingFrom)
+        )
+        
+        if (!exists) {
+          const newConnection = {
+            id: `conn-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            from: connectingFrom,
+            to: node.id
+          }
+          setConnections([...connections, newConnection])
+        }
+      }
+      setConnectingFrom(null)
+    } else {
+      setSelectedNode(node)
+      setNodeConfig(node.config || {})
+    }
+  }
+
+  const startConnection = (nodeId, e) => {
+    e.stopPropagation()
+    setConnectingFrom(nodeId)
+  }
+
+  const handleNodeDragStart = (node, e) => {
+    e.stopPropagation()
+    e.preventDefault()
+    
+    const rect = e.currentTarget.getBoundingClientRect()
+    const canvasRect = canvasRef.current?.getBoundingClientRect()
+    if (!canvasRect) return
+    
+    const offsetX = e.clientX - rect.left - node.width / 2
+    const offsetY = e.clientY - rect.top - node.height / 2
+    
+    // Store in ref for stable access
+    dragStateRef.current = {
+      node: node,
+      offset: { x: offsetX, y: offsetY },
+      startPos: { x: e.clientX, y: e.clientY }
+    }
+    
+    setIsDragging(true)
+    setDraggingNode(node)
+    
+    // Set up drag handlers - wrapped in try-catch to prevent crashes
+    const handleMouseMove = (e) => {
+      try {
+        e.preventDefault()
+        e.stopPropagation()
+        
+        const canvasRect = canvasRef.current?.getBoundingClientRect()
+        if (!canvasRect || !dragStateRef.current.node) return
+        
+        const dragState = dragStateRef.current
+        const newX = e.clientX - canvasRect.left - dragState.offset.x
+        const newY = e.clientY - canvasRect.top - dragState.offset.y
+        
+        setNodes(prevNodes => {
+          try {
+            return prevNodes.map(n => 
+              n.id === dragState.node.id 
+                ? { ...n, x: Math.max(0, newX), y: Math.max(0, newY) }
+                : n
+            )
+          } catch (err) {
+            console.error('Error updating nodes:', err)
+            return prevNodes
+          }
+        })
+      } catch (err) {
+        console.error('Error in handleMouseMove:', err)
+        // Clean up on error
+        handleMouseUp(e)
+      }
+    }
+    
+    const handleMouseUp = (e) => {
+      try {
+        e.preventDefault()
+        e.stopPropagation()
+        
+        dragStateRef.current = {
+          node: null,
+          offset: { x: 0, y: 0 },
+          startPos: { x: 0, y: 0 }
+        }
+        
+        setIsDragging(false)
+        setDraggingNode(null)
+        
+        window.removeEventListener('mousemove', handleMouseMove)
+        window.removeEventListener('mouseup', handleMouseUp)
+      } catch (err) {
+        console.error('Error in handleMouseUp:', err)
+      }
+    }
+    
+    try {
+      window.addEventListener('mousemove', handleMouseMove, { passive: false })
+      window.addEventListener('mouseup', handleMouseUp, { passive: false, once: true })
+    } catch (err) {
+      console.error('Error setting up drag listeners:', err)
+    }
   }
 
   const deleteNode = (nodeId) => {
     setNodes(nodes.filter(n => n.id !== nodeId))
+    setConnections(connections.filter(c => c.from !== nodeId && c.to !== nodeId))
     setSelectedNode(null)
+  }
+
+  const deleteConnection = (connId) => {
+    setConnections(connections.filter(c => c.id !== connId))
   }
 
   const clearCanvas = () => {
-    setNodes([])
-    setSelectedNode(null)
+    if (confirm('Clear all nodes and connections?')) {
+      setNodes([])
+      setConnections([])
+      setSelectedNode(null)
+      setWorkflowName('Untitled Workflow')
+      setCurrentWorkflowId(null)
+      setNodeConfig({})
+    }
   }
 
   const saveWorkflow = () => {
-    const workflow = {
-      nodes,
-      name: 'My Workflow',
-      createdAt: new Date().toISOString()
+    const name = prompt('Workflow name:', workflowName) || workflowName
+    setWorkflowName(name)
+    
+    const workflow = currentWorkflowId 
+      ? { id: currentWorkflowId, name, nodes, connections, updatedAt: new Date().toISOString() }
+      : createWorkflow(name, nodes, connections)
+    
+    if (persistWorkflow(workflow)) {
+      setCurrentWorkflowId(workflow.id)
+      const workflows = loadWorkflows()
+      setSavedWorkflows(workflows)
+      alert('Workflow saved successfully!')
+    } else {
+      alert('Failed to save workflow')
     }
-    console.log('Saving workflow:', workflow)
+  }
+
+  const loadWorkflow = (workflow) => {
+    setNodes(workflow.nodes || [])
+    setConnections(workflow.connections || [])
+    setWorkflowName(workflow.name)
+    setCurrentWorkflowId(workflow.id)
+    setSelectedNode(null)
+    setShowLoadDialog(false)
   }
 
   const exportWorkflow = () => {
-    const workflow = { nodes }
+    const workflow = { 
+      name: workflowName,
+      nodes, 
+      connections,
+      exportedAt: new Date().toISOString()
+    }
     const dataStr = JSON.stringify(workflow, null, 2)
     const dataBlob = new Blob([dataStr], { type: 'application/json' })
     const url = URL.createObjectURL(dataBlob)
     const link = document.createElement('a')
     link.href = url
-    link.download = 'workflow.json'
+    link.download = `${workflowName.replace(/[^a-z0-9]/gi, '_')}.json`
     link.click()
     URL.revokeObjectURL(url)
   }
 
+  const importWorkflowFromFile = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      try {
+        const imported = importWorkflow(event.target.result)
+        if (imported) {
+          setNodes(imported.nodes || [])
+          setConnections(imported.connections || [])
+          setWorkflowName(imported.name)
+          setCurrentWorkflowId(imported.id)
+          const workflows = loadWorkflows()
+          setSavedWorkflows(workflows)
+          alert('Workflow imported successfully!')
+        } else {
+          alert('Failed to import workflow')
+        }
+      } catch (error) {
+        alert('Error importing workflow: ' + error.message)
+      }
+    }
+    reader.readAsText(file)
+    e.target.value = '' // Reset file input
+  }
+
+  const updateNodeConfig = (nodeId, config) => {
+    setNodes(nodes.map(n => 
+      n.id === nodeId ? { ...n, config: { ...n.config, ...config } } : n
+    ))
+    if (selectedNode?.id === nodeId) {
+      setSelectedNode({ ...selectedNode, config: { ...selectedNode.config, ...config } })
+      setNodeConfig({ ...nodeConfig, ...config })
+    }
+  }
+
+  const getNodeConfigForm = (node) => {
+    if (!node) return null
+
+    switch (node.type) {
+      case 'email':
+        return (
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">To</label>
+              <input
+                type="text"
+                className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                placeholder="recipient@example.com"
+                value={nodeConfig.to || ''}
+                onChange={(e) => updateNodeConfig(node.id, { to: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Subject</label>
+              <input
+                type="text"
+                className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                placeholder="Email subject"
+                value={nodeConfig.subject || ''}
+                onChange={(e) => updateNodeConfig(node.id, { subject: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Body</label>
+              <textarea
+                className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                rows="3"
+                placeholder="Email body"
+                value={nodeConfig.body || ''}
+                onChange={(e) => updateNodeConfig(node.id, { body: e.target.value })}
+              />
+            </div>
+          </div>
+        )
+      case 'sms':
+        return (
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Phone Number</label>
+              <input
+                type="text"
+                className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                placeholder="+1234567890"
+                value={nodeConfig.phone || ''}
+                onChange={(e) => updateNodeConfig(node.id, { phone: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Message</label>
+              <textarea
+                className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                rows="3"
+                placeholder="SMS message"
+                value={nodeConfig.message || ''}
+                onChange={(e) => updateNodeConfig(node.id, { message: e.target.value })}
+              />
+            </div>
+          </div>
+        )
+      case 'trigger':
+        return (
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Trigger Type</label>
+              <select
+                className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                value={nodeConfig.triggerType || 'webhook'}
+                onChange={(e) => updateNodeConfig(node.id, { triggerType: e.target.value })}
+              >
+                <option value="webhook">Webhook</option>
+                <option value="schedule">Schedule</option>
+                <option value="manual">Manual</option>
+              </select>
+            </div>
+          </div>
+        )
+      case 'schedule':
+        return (
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Schedule</label>
+              <select
+                className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                value={nodeConfig.schedule || 'daily'}
+                onChange={(e) => updateNodeConfig(node.id, { schedule: e.target.value })}
+              >
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="hourly">Hourly</option>
+              </select>
+            </div>
+          </div>
+        )
+      default:
+        return (
+          <div className="p-3 bg-gray-50 rounded-lg text-sm text-gray-600">
+            No additional configuration available for this node type.
+          </div>
+        )
+    }
+  }
+
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-      {/* Toolbar - moved to top right */}
+      {/* Toolbar - Top */}
       <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
         <div className="flex items-center gap-2 bg-white rounded-lg shadow-sm border border-gray-200 p-2">
           <button
             onClick={() => setShowGrid(!showGrid)}
             className={`p-2 rounded-lg ${showGrid ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}
+            title="Toggle Grid"
           >
             {showGrid ? <Eye size={16} /> : <EyeOff size={16} />}
           </button>
-          <span className="text-sm text-gray-500">Grid</span>
         </div>
         
         <div className="flex items-center gap-2 bg-white rounded-lg shadow-sm border border-gray-200 p-2">
+          <input
+            type="text"
+            value={workflowName}
+            onChange={(e) => setWorkflowName(e.target.value)}
+            className="px-2 py-1 text-sm border border-gray-300 rounded w-40"
+            placeholder="Workflow name"
+          />
+          <button
+            onClick={() => setShowLoadDialog(true)}
+            className="flex items-center gap-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+            title="Load Workflow"
+          >
+            <FolderOpen size={16} />
+          </button>
           <button
             onClick={saveWorkflow}
             className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            title="Save Workflow"
           >
             <Save size={16} />
             Save
           </button>
           <button
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-2 px-3 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors"
+            title="Import Workflow"
+          >
+            <Upload size={16} />
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            onChange={importWorkflowFromFile}
+            className="hidden"
+          />
+          <button
             onClick={exportWorkflow}
             className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+            title="Export Workflow"
           >
             <Download size={16} />
-            Export
           </button>
           <button
             onClick={clearCanvas}
             className="flex items-center gap-2 px-3 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
+            title="Clear Canvas"
           >
             <Trash2 size={16} />
-            Clear
           </button>
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col">
-        <div className="flex-1 flex">
-        {/* Component Palette */}
-        <div className="w-64 bg-white border-r border-gray-200 p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-4">Components</h3>
-          <div className="space-y-2">
-            {nodeTypes.map((type) => {
-              const IconComponent = type.icon
-              return (
-                <div
-                  key={type.id}
-                  className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors"
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData('application/json', JSON.stringify(type))
-                  }}
-                >
-                  <div className={`p-2 rounded-lg ${type.color} text-white`}>
-                    <IconComponent size={16} />
+      {/* Load Workflow Dialog */}
+      {showLoadDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Load Workflow</h3>
+              <button onClick={() => setShowLoadDialog(false)}>
+                <X size={20} />
+              </button>
+            </div>
+            {savedWorkflows.length === 0 ? (
+              <p className="text-gray-500">No saved workflows found.</p>
+            ) : (
+              <div className="space-y-2">
+                {savedWorkflows.map((workflow) => (
+                  <div
+                    key={workflow.id}
+                    className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50"
+                  >
+                    <div>
+                      <div className="font-medium">{workflow.name}</div>
+                      <div className="text-sm text-gray-500">
+                        {workflow.nodes?.length || 0} nodes, {workflow.connections?.length || 0} connections
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => loadWorkflow(workflow)}
+                        className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+                      >
+                        Load
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (confirm('Delete this workflow?')) {
+                            deletePersistedWorkflow(workflow.id)
+                            const workflows = loadWorkflows()
+                            setSavedWorkflows(workflows)
+                          }
+                        }}
+                        className="px-3 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
-                  <div>
-                    <div className="text-sm font-medium text-gray-900">{type.name}</div>
-                    <div className="text-xs text-gray-500">{type.description}</div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-
-        {/* Canvas Area */}
-        <div className="flex-1 relative overflow-hidden">
-          <div
-            ref={canvasRef}
-            className="w-full h-full relative cursor-grab active:cursor-grabbing"
-            style={{
-              backgroundImage: showGrid 
-                ? 'radial-gradient(circle, #e5e7eb 1px, transparent 1px)' 
-                : 'none',
-              backgroundSize: '20px 20px'
-            }}
-            onClick={handleCanvasClick}
-            onDrop={(e) => {
-              e.preventDefault()
-              const type = JSON.parse(e.dataTransfer.getData('application/json'))
-              const rect = canvasRef.current.getBoundingClientRect()
-              const x = e.clientX - rect.left
-              const y = e.clientY - rect.top
-              addNode(type, x, y)
-            }}
-            onDragOver={(e) => e.preventDefault()}
-          >
-            {/* Render Nodes */}
-            {nodes.map((node) => {
-              const IconComponent = node.icon
-              return (
-                <div
-                  key={node.id}
-                  className={`absolute border-2 rounded-lg p-3 cursor-move min-w-[120px] min-h-[80px] flex flex-col items-center justify-center ${
-                    selectedNode?.id === node.id 
-                      ? 'border-blue-500 bg-blue-50' 
-                      : 'border-gray-300 bg-white hover:border-gray-400'
-                  }`}
-                  style={{
-                    left: node.x,
-                    top: node.y,
-                    width: node.width,
-                    height: node.height
-                  }}
-                  onClick={(e) => handleNodeClick(node, e)}
-                >
-                  <div className={`p-2 rounded-lg ${node.color} text-white mb-2`}>
-                    <IconComponent size={20} />
-                  </div>
-                  <div className="text-xs font-medium text-gray-900 text-center">{node.name}</div>
-                </div>
-              )
-            })}
-
-            {/* Empty State */}
-            {nodes.length === 0 && (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="text-center">
-                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Plus size={32} className="text-gray-400" />
-                  </div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">Start Building Your Workflow</h3>
-                  <p className="text-gray-500 mb-4">Drag components from the sidebar to get started</p>
-                  <div className="flex items-center justify-center gap-2 text-sm text-gray-400">
-                    <MousePointer size={16} />
-                    <span>Click and drag to pan</span>
-                  </div>
-                </div>
+                ))}
               </div>
             )}
           </div>
         </div>
+      )}
 
-        {/* Properties Panel */}
-        {selectedNode && (
-          <div className="w-80 bg-white border-l border-gray-200 p-4">
-            <h3 className="text-sm font-semibold text-gray-700 mb-4">Properties</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Node Name</label>
-                <input
-                  type="text"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  value={selectedNode.name}
-                  onChange={(e) => {
-                    const updatedNodes = nodes.map(n => 
-                      n.id === selectedNode.id ? { ...n, name: e.target.value } : n
-                    )
-                    setNodes(updatedNodes)
-                    setSelectedNode({ ...selectedNode, name: e.target.value })
-                  }}
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Configuration</label>
-                <div className="space-y-2">
-                  <div className="p-3 bg-gray-50 rounded-lg">
-                    <div className="text-sm text-gray-700">Email Settings</div>
-                    <button className="text-blue-600 text-sm hover:text-blue-800">Configure</button>
+      <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex">
+          {/* Component Palette */}
+          <div className="w-64 bg-white border-r border-gray-200 p-4 overflow-y-auto">
+            <h3 className="text-sm font-semibold text-gray-700 mb-4">Components</h3>
+            <div className="space-y-2">
+              {nodeTypes.map((type) => {
+                const IconComponent = type.icon
+                return (
+                  <div
+                    key={type.id}
+                    className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors"
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('application/json', JSON.stringify(type))
+                    }}
+                  >
+                    <div className={`p-2 rounded-lg ${type.color} text-white`}>
+                      <IconComponent size={16} />
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">{type.name}</div>
+                      <div className="text-xs text-gray-500">{type.description}</div>
+                    </div>
                   </div>
-                  <div className="p-3 bg-gray-50 rounded-lg">
-                    <div className="text-sm text-gray-700">Trigger Conditions</div>
-                    <button className="text-blue-600 text-sm hover:text-blue-800">Configure</button>
-                  </div>
-                </div>
-              </div>
-
-              <button
-                onClick={() => deleteNode(selectedNode.id)}
-                className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
-              >
-                <Trash2 size={16} />
-                Delete Node
-              </button>
+                )
+              })}
             </div>
           </div>
-        )}
+
+          {/* Canvas Area */}
+          <div className="flex-1 relative overflow-hidden">
+            <div
+              ref={canvasRef}
+              className="w-full h-full relative"
+              style={{
+                backgroundImage: showGrid 
+                  ? 'radial-gradient(circle, #e5e7eb 1px, transparent 1px)' 
+                  : 'none',
+                backgroundSize: '20px 20px'
+              }}
+              onClick={handleCanvasClick}
+              onDrop={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                
+                // Only handle drops from sidebar (new components)
+                try {
+                  const data = e.dataTransfer.getData('application/json')
+                  if (!data) {
+                    console.debug('Drop handler: no data')
+                    return
+                  }
+                  
+                  const type = JSON.parse(data)
+                  if (!type || !type.id) {
+                    console.debug('Drop handler: invalid type data')
+                    return // Invalid data, might be from node drag
+                  }
+                  
+                  const rect = canvasRef.current?.getBoundingClientRect()
+                  if (!rect) {
+                    console.error('Canvas rect not available')
+                    return
+                  }
+                  
+                  const x = e.clientX - rect.left
+                  const y = e.clientY - rect.top
+                  addNode(type, x, y)
+                } catch (err) {
+                  // Ignore invalid drops (like from dragging nodes)
+                  console.debug('Drop handler error:', err.message)
+                }
+              }}
+              onDragOver={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+              }}
+            >
+              {/* SVG for Connections */}
+              <svg className="absolute inset-0 pointer-events-none" style={{ zIndex: 1 }}>
+                {connections.map((conn) => {
+                  const fromNode = nodes.find(n => n.id === conn.from)
+                  const toNode = nodes.find(n => n.id === conn.to)
+                  if (!fromNode || !toNode) return null
+                  
+                  return (
+                    <g key={conn.id}>
+                      <path
+                        d={getConnectionPath(fromNode, toNode)}
+                        stroke="#3B82F6"
+                        strokeWidth="2"
+                        fill="none"
+                        markerEnd="url(#arrowhead)"
+                      />
+                    </g>
+                  )
+                })}
+                <defs>
+                  <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                    <polygon points="0 0, 10 3, 0 6" fill="#3B82F6" />
+                  </marker>
+                </defs>
+              </svg>
+
+              {/* Render Nodes */}
+              {nodes && nodes.length > 0 && nodes.map((node) => {
+                if (!node || !node.id) return null
+                
+                const IconComponent = node.icon || Zap
+                return (
+                  <div
+                    key={node.id}
+                    className={`absolute border-2 rounded-lg p-3 cursor-move min-w-[120px] min-h-[80px] flex flex-col items-center justify-center ${
+                      selectedNode?.id === node.id 
+                        ? 'border-blue-500 bg-blue-50' 
+                        : connectingFrom === node.id
+                        ? 'border-green-500 bg-green-50'
+                        : draggingNode?.id === node.id
+                        ? 'border-purple-500 bg-purple-50'
+                        : 'border-gray-300 bg-white hover:border-gray-400'
+                    }`}
+                    style={{
+                      left: node.x,
+                      top: node.y,
+                      width: node.width,
+                      height: node.height,
+                      zIndex: selectedNode?.id === node.id || draggingNode?.id === node.id ? 10 : 2,
+                      userSelect: 'none',
+                      WebkitUserSelect: 'none',
+                      msUserSelect: 'none'
+                    }}
+                    onClick={(e) => handleNodeClick(node, e)}
+                    onMouseDown={(e) => {
+                      // Only start drag on left mouse button
+                      if (e.button === 0) {
+                        handleNodeDragStart(node, e)
+                      }
+                    }}
+                    draggable={false}
+                  >
+                    <div className={`p-2 rounded-lg ${node.color} text-white mb-2`}>
+                      <IconComponent size={20} />
+                    </div>
+                    <div className="text-xs font-medium text-gray-900 text-center mb-1">{node.name}</div>
+                    <button
+                      onClick={(e) => startConnection(node.id, e)}
+                      className="mt-1 p-1 hover:bg-gray-200 rounded"
+                      title="Connect to another node"
+                    >
+                      <LinkIcon size={12} className="text-gray-500" />
+                    </button>
+                  </div>
+                )
+              })}
+
+              {/* Empty State */}
+              {nodes.length === 0 && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="text-center">
+                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <Plus size={32} className="text-gray-400" />
+                    </div>
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">Start Building Your Workflow</h3>
+                    <p className="text-gray-500 mb-4">Drag components from the sidebar to get started</p>
+                    <div className="flex items-center justify-center gap-2 text-sm text-gray-400">
+                      <MousePointer size={16} />
+                      <span>Click and drag nodes to move them</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Properties Panel */}
+          {selectedNode && (
+            <div className="w-80 bg-white border-l border-gray-200 p-4 overflow-y-auto">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold text-gray-700">Properties</h3>
+                <button onClick={() => setSelectedNode(null)}>
+                  <X size={16} className="text-gray-400" />
+                </button>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Node Name</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={selectedNode.name}
+                    onChange={(e) => {
+                      const updatedNodes = nodes.map(n => 
+                        n.id === selectedNode.id ? { ...n, name: e.target.value } : n
+                      )
+                      setNodes(updatedNodes)
+                      setSelectedNode({ ...selectedNode, name: e.target.value })
+                    }}
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <Settings size={14} className="inline mr-1" />
+                    Configuration
+                  </label>
+                  {getNodeConfigForm(selectedNode)}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Connections</label>
+                  <div className="space-y-2">
+                    {connections.filter(c => c.from === selectedNode.id || c.to === selectedNode.id).map((conn) => {
+                      const otherNode = nodes.find(n => 
+                        n.id === (conn.from === selectedNode.id ? conn.to : conn.from)
+                      )
+                      return (
+                        <div key={conn.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                          <span className="text-sm text-gray-700">
+                            {conn.from === selectedNode.id ? '→' : '←'} {otherNode?.name || 'Unknown'}
+                          </span>
+                          <button
+                            onClick={() => deleteConnection(conn.id)}
+                            className="text-red-600 hover:text-red-800"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      )
+                    })}
+                    {connections.filter(c => c.from === selectedNode.id || c.to === selectedNode.id).length === 0 && (
+                      <p className="text-sm text-gray-500">No connections</p>
+                    )}
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => deleteNode(selectedNode.id)}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
+                >
+                  <Trash2 size={16} />
+                  Delete Node
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Template Library - Bottom Section */}
@@ -476,7 +1034,7 @@ export default function AgentBuilder() {
                 </div>
                 <p className="text-xs text-gray-600 mb-3">{template.description}</p>
                 <div className="flex items-center gap-1 text-xs text-gray-500">
-                  <span>Click to add to workflow</span>
+                  <span>Click to load template</span>
                   <Plus size={12} />
                 </div>
               </div>
