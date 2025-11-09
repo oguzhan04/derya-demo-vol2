@@ -1,8 +1,10 @@
+import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
 import multer from 'multer'
 import { pdf as pdfParse } from 'pdf-parse'
 import OpenAI from 'openai'
+import { startEmailWatcher, setProcessArrivalNoticeBuffer, emailStatus } from './emailWatcher.js'
 
 const app = express()
 const PORT = 3001
@@ -134,6 +136,272 @@ function formatTime(date) {
 }
 
 // ============================================================================
+// Shared Arrival Notice Processing Function
+// ============================================================================
+
+/**
+ * Process arrival notice buffer (shared between upload and email)
+ * @param {Buffer} fileBuffer - PDF or image file buffer
+ * @param {string} source - 'upload' | 'email'
+ * @param {string} mimetype - MIME type of the file (optional, defaults to 'application/pdf')
+ * @returns {Promise<{shipment: object, actionMessage: string}>}
+ */
+async function processArrivalNoticeBuffer(fileBuffer, source = 'upload', mimetype = 'application/pdf', emailMetadata = null) {
+  const employee = employees.find(e => e.id === 'AI-EMP-001')
+  if (!employee) {
+    throw new Error('Employee not found')
+  }
+
+  try {
+    // Extract text from file
+    let extractedText = ''
+    
+    if (mimetype === 'application/pdf') {
+      // Extract text from PDF
+      const pdfData = await pdfParse(fileBuffer)
+      extractedText = pdfData.text
+    } else if (mimetype.startsWith('image/')) {
+      // For images, we'll use OpenAI's vision API
+      // Convert buffer to base64
+      const base64Image = fileBuffer.toString('base64')
+      const dataUrl = `data:${mimetype};base64,${base64Image}`
+      
+      // Use vision API to extract text
+      const visionResponse = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Extract all text from this arrival notice document. Return only the raw text content, no formatting.' },
+              { type: 'image_url', image_url: { url: dataUrl } }
+            ]
+          }
+        ],
+        max_tokens: 2000
+      })
+      extractedText = visionResponse.choices[0].message.content
+    }
+
+    if (!extractedText || extractedText.trim().length === 0) {
+      throw new Error('Could not extract text from document')
+    }
+
+    // Call OpenAI to extract structured data
+    console.log('🤖 [OPENAI] Sending PDF to OpenAI…')
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an expert at extracting structured data from shipping documents. Extract the following fields from the arrival notice and return ONLY valid JSON, no other text: { "carrier": string, "vessel": string, "voyage": string, "containerNo": string, "eta": string (ISO date format), "port": string, "totalCharges": number, "shipper": string (optional), "consignee": string (optional), "hsCode": string (optional), "commodity": string (optional) }'
+        },
+        {
+          role: 'user',
+          content: `Extract shipping information from this arrival notice:\n\n${extractedText}\n\nReturn JSON with: carrier, vessel, voyage, containerNo, eta (ISO date), port, totalCharges (number), shipper (optional), consignee (optional), hsCode (optional), commodity (optional).`
+        }
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0.1
+    })
+
+    // Parse the JSON response
+    let extractedData
+    try {
+      const responseText = completion.choices[0].message.content
+      extractedData = JSON.parse(responseText)
+    } catch (parseError) {
+      console.error('Failed to parse OpenAI response:', parseError)
+      throw new Error('Failed to parse extracted data')
+    }
+
+    // Log parsed data
+    const containerNo = extractedData.containerNo || generateContainerNo()
+    console.log('🤖 [OPENAI] Parsed arrival notice:', {
+      container: containerNo,
+      vessel: extractedData.vessel || 'Unknown',
+      eta: extractedData.eta || 'Unknown',
+      port: extractedData.port || 'Unknown',
+      carrier: extractedData.carrier || 'Unknown'
+    })
+
+    // Validate required fields
+    const eta = extractedData.eta || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+    const port = extractedData.port || 'Unknown'
+    const totalCharges = extractedData.totalCharges || 0
+    const carrier = extractedData.carrier || 'Unknown'
+    const vessel = extractedData.vessel || 'Unknown'
+    const voyage = extractedData.voyage || 'Unknown'
+    const shipper = extractedData.shipper || null
+    const consignee = extractedData.consignee || null
+    const hsCode = extractedData.hsCode || null
+    const commodity = extractedData.commodity || null
+
+    // Update employee stats
+    employee.tasksCompleted += 1
+    employee.workQueue += 1
+    setTimeout(() => {
+      employee.workQueue = Math.max(0, employee.workQueue - 1)
+    }, 100)
+
+    // Update or insert shipment
+    const existingShipmentIndex = shipments.findIndex(s => s.containerNo === containerNo)
+    let shipment
+    if (existingShipmentIndex >= 0) {
+      shipment = shipments[existingShipmentIndex]
+      shipment.eta = eta
+      shipment.status = 'in-transit'
+      shipment.port = port
+      shipment.carrier = carrier
+      shipment.lastUpdatedBy = employee.name
+      // Update compliance fields if provided
+      if (shipper) shipment.shipper = shipper
+      if (consignee) shipment.consignee = consignee
+      if (hsCode) shipment.hsCode = hsCode
+      if (commodity) shipment.commodity = commodity
+      // Preserve email metadata if it exists, or add it if this is from email
+      if (emailMetadata && !shipment.emailMetadata) {
+        shipment.source = source
+        shipment.emailMetadata = emailMetadata
+      }
+    } else {
+      shipment = {
+        id: String(shipments.length + 1),
+        containerNo: containerNo,
+        status: 'in-transit',
+        eta: eta,
+        port: port,
+        carrier: carrier,
+        vessel: vessel,
+        voyage: voyage,
+        totalCharges: totalCharges,
+        lastUpdatedBy: employee.name,
+        shipper: shipper,
+        consignee: consignee,
+        hsCode: hsCode,
+        commodity: commodity,
+        source: source, // 'upload' or 'email'
+        emailMetadata: emailMetadata // { subject, from, receivedAt, attachmentName, attachmentSize }
+      }
+      shipments.push(shipment)
+    }
+    
+    // Initialize phase data if needed
+    initializePhaseData(shipment)
+    
+    // Log shipment creation
+    const isNew = existingShipmentIndex < 0
+    console.log(`🚢 [SHIPMENT] ${isNew ? 'Created' : 'Updated'} shipment:`, {
+      id: shipment.id,
+      container: shipment.containerNo,
+      phase: shipment.currentPhase || 'intake'
+    })
+    
+    // Phase transition: Intake → Compliance
+    // After successful parse, mark intake as done
+    shipment.phaseProgress.intake = 'done'
+    shipment.currentPhase = 'compliance'
+    // Set compliance to in_progress initially - runComplianceCheck will update it
+    if (shipment.phaseProgress.compliance === 'pending') {
+      shipment.phaseProgress.compliance = 'in_progress'
+    }
+
+    // Run compliance check - this will either move to monitoring or keep in compliance
+    console.log(`🛃 [COMPLIANCE] Started for shipment: ${shipment.id}`)
+    runComplianceCheck(shipment)
+
+    // Create action message based on source
+    const actionMessage = source === 'email'
+      ? `[Intake] Ops AI processed arrival notice from email for container ${containerNo}`
+      : `FreightBot Alpha parsed arrival notice for ${containerNo} (ETA ${new Date(eta).toLocaleDateString()}, Port: ${port}, Charges: $${totalCharges.toLocaleString()} USD).`
+    const actionPhase = 'intake'
+    
+    // Add compliance action if compliance check was run
+    if (shipment.complianceStatus === 'ok') {
+      const complianceAction = {
+        id: String(actionCounter++),
+        employeeId: 'AI-EMP-001',
+        createdAt: new Date().toISOString(),
+        message: `[Compliance] Ops AI cleared shipment ${containerNo} for monitoring.`,
+        phase: 'compliance'
+      }
+      actions.unshift(complianceAction)
+    } else if (shipment.complianceStatus === 'issues' && shipment.complianceIssues.length > 0) {
+      const complianceAction = {
+        id: String(actionCounter++),
+        employeeId: 'AI-EMP-001',
+        createdAt: new Date().toISOString(),
+        message: `[Compliance] Ops AI found compliance issues for ${containerNo}: ${shipment.complianceIssues[0]}.`,
+        phase: 'compliance'
+      }
+      actions.unshift(complianceAction)
+    }
+
+    // Create action with phase
+    const action = {
+      id: String(actionCounter++),
+      employeeId: 'AI-EMP-001',
+      createdAt: new Date().toISOString(),
+      message: actionMessage,
+      phase: actionPhase
+    }
+    actions.unshift(action)
+
+    // Keep only last 50 actions
+    if (actions.length > 50) {
+      actions = actions.slice(0, 50)
+    }
+
+    // Update last activity
+    employee.lastActivity = 'just now'
+    setTimeout(() => {
+      employee.lastActivity = '1 min ago'
+    }, 60000)
+
+    return {
+      shipment,
+      actionMessage,
+      action,
+      extracted: {
+        containerNo,
+        eta,
+        port,
+        totalCharges,
+        carrier,
+        vessel,
+        voyage,
+        shipper,
+        consignee,
+        hsCode,
+        commodity
+      }
+    }
+
+  } catch (error) {
+    console.error(`Error processing arrival notice (${source}):`, error)
+
+    // Still create an action for the attempt
+    const errorAction = {
+      id: String(actionCounter++),
+      employeeId: 'AI-EMP-001',
+      createdAt: new Date().toISOString(),
+      message: `FreightBot Alpha attempted to parse arrival notice (${source}) but encountered an error: ${error.message}`
+    }
+    actions.unshift(errorAction)
+
+    // Keep only last 50 actions
+    if (actions.length > 50) {
+      actions = actions.slice(0, 50)
+    }
+
+    throw error
+  }
+}
+
+// Export for email watcher
+export { processArrivalNoticeBuffer, shipments, actions, actionCounter, employees, formatTime }
+
+// ============================================================================
 // Compliance Check Function
 // ============================================================================
 
@@ -186,6 +454,15 @@ function runComplianceCheck(shipment) {
     }
     shipment.currentPhase = 'compliance'
   }
+
+  // Log compliance check completion
+  console.log('🛃 [COMPLIANCE] Completed:', {
+    id: shipment.id,
+    container: shipment.containerNo,
+    issues: issues.length,
+    status: shipment.complianceStatus,
+    phase: shipment.currentPhase
+  })
 
   return shipment
 }
@@ -346,224 +623,22 @@ app.post('/api/ai-events/arrival-notice-upload', upload.single('file'), async (r
   }
 
   try {
-    // Extract text from file
-    let extractedText = ''
-    
-    if (req.file.mimetype === 'application/pdf') {
-      // Extract text from PDF
-      const pdfData = await pdfParse(req.file.buffer)
-      extractedText = pdfData.text
-    } else if (req.file.mimetype.startsWith('image/')) {
-      // For images, we'll use OpenAI's vision API
-      // Convert buffer to base64
-      const base64Image = req.file.buffer.toString('base64')
-      const dataUrl = `data:${req.file.mimetype};base64,${base64Image}`
-      
-      // Use vision API to extract text
-      const visionResponse = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: 'Extract all text from this arrival notice document. Return only the raw text content, no formatting.' },
-              { type: 'image_url', image_url: { url: dataUrl } }
-            ]
-          }
-        ],
-        max_tokens: 2000
-      })
-      extractedText = visionResponse.choices[0].message.content
-    }
-
-    if (!extractedText || extractedText.trim().length === 0) {
-      throw new Error('Could not extract text from document')
-    }
-
-    // Call OpenAI to extract structured data
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are an expert at extracting structured data from shipping documents. Extract the following fields from the arrival notice and return ONLY valid JSON, no other text: { "carrier": string, "vessel": string, "voyage": string, "containerNo": string, "eta": string (ISO date format), "port": string, "totalCharges": number, "shipper": string (optional), "consignee": string (optional), "hsCode": string (optional), "commodity": string (optional) }'
-        },
-        {
-          role: 'user',
-          content: `Extract shipping information from this arrival notice:\n\n${extractedText}\n\nReturn JSON with: carrier, vessel, voyage, containerNo, eta (ISO date), port, totalCharges (number), shipper (optional), consignee (optional), hsCode (optional), commodity (optional).`
-        }
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.1
-    })
-
-    // Parse the JSON response
-    let extractedData
-    try {
-      const responseText = completion.choices[0].message.content
-      extractedData = JSON.parse(responseText)
-    } catch (parseError) {
-      console.error('Failed to parse OpenAI response:', parseError)
-      throw new Error('Failed to parse extracted data')
-    }
-
-    // Validate required fields
-    const containerNo = extractedData.containerNo || generateContainerNo()
-    const eta = extractedData.eta || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-    const port = extractedData.port || 'Unknown'
-    const totalCharges = extractedData.totalCharges || 0
-    const carrier = extractedData.carrier || 'Unknown'
-    const vessel = extractedData.vessel || 'Unknown'
-    const voyage = extractedData.voyage || 'Unknown'
-    const shipper = extractedData.shipper || null
-    const consignee = extractedData.consignee || null
-    const hsCode = extractedData.hsCode || null
-    const commodity = extractedData.commodity || null
-
-    // Update employee stats
-    employee.tasksCompleted += 1
-    employee.workQueue += 1
-    setTimeout(() => {
-      employee.workQueue = Math.max(0, employee.workQueue - 1)
-    }, 100)
-
-    // Update or insert shipment
-    const existingShipmentIndex = shipments.findIndex(s => s.containerNo === containerNo)
-    let shipment
-    if (existingShipmentIndex >= 0) {
-      shipment = shipments[existingShipmentIndex]
-      shipment.eta = eta
-      shipment.status = 'in-transit'
-      shipment.port = port
-      shipment.carrier = carrier
-      shipment.lastUpdatedBy = employee.name
-      // Update compliance fields if provided
-      if (shipper) shipment.shipper = shipper
-      if (consignee) shipment.consignee = consignee
-      if (hsCode) shipment.hsCode = hsCode
-      if (commodity) shipment.commodity = commodity
-    } else {
-      shipment = {
-        id: String(shipments.length + 1),
-        containerNo: containerNo,
-        status: 'in-transit',
-        eta: eta,
-        port: port,
-        carrier: carrier,
-        vessel: vessel,
-        voyage: voyage,
-        totalCharges: totalCharges,
-        lastUpdatedBy: employee.name,
-        shipper: shipper,
-        consignee: consignee,
-        hsCode: hsCode,
-        commodity: commodity
-      }
-      shipments.push(shipment)
-    }
-    
-    // Initialize phase data if needed
-    initializePhaseData(shipment)
-    
-    // Phase transition: Intake → Compliance
-    // After successful parse, mark intake as done
-    shipment.phaseProgress.intake = 'done'
-    shipment.currentPhase = 'compliance'
-    // Set compliance to in_progress initially - runComplianceCheck will update it
-    if (shipment.phaseProgress.compliance === 'pending') {
-      shipment.phaseProgress.compliance = 'in_progress'
-    }
-
-    // Run compliance check - this will either move to monitoring or keep in compliance
-    // runComplianceCheck will update complianceStatus and potentially move to monitoring
-    runComplianceCheck(shipment)
-
-    // Create action with phase and compliance status
-    let actionMessage = `FreightBot Alpha parsed arrival notice for ${containerNo} (ETA ${new Date(eta).toLocaleDateString()}, Port: ${port}, Charges: $${totalCharges.toLocaleString()} USD).`
-    let actionPhase = 'intake'
-    
-    // Add compliance action if compliance check was run
-    if (shipment.complianceStatus === 'ok') {
-      const complianceAction = {
-        id: String(actionCounter++),
-        employeeId: 'AI-EMP-001',
-        createdAt: new Date().toISOString(),
-        message: `[Compliance] Ops AI cleared shipment ${containerNo} for monitoring.`,
-        phase: 'compliance'
-      }
-      actions.unshift(complianceAction)
-    } else if (shipment.complianceStatus === 'issues' && shipment.complianceIssues.length > 0) {
-      const complianceAction = {
-        id: String(actionCounter++),
-        employeeId: 'AI-EMP-001',
-        createdAt: new Date().toISOString(),
-        message: `[Compliance] Ops AI found compliance issues for ${containerNo}: ${shipment.complianceIssues[0]}.`,
-        phase: 'compliance'
-      }
-      actions.unshift(complianceAction)
-    }
-
-    // Create action with phase
-    const action = {
-      id: String(actionCounter++),
-      employeeId: 'AI-EMP-001',
-      createdAt: new Date().toISOString(),
-      message: actionMessage,
-      phase: actionPhase
-    }
-    actions.unshift(action)
-
-    // Keep only last 50 actions
-    if (actions.length > 50) {
-      actions = actions.slice(0, 50)
-    }
-
-    // Update last activity
-    employee.lastActivity = 'just now'
-    setTimeout(() => {
-      employee.lastActivity = '1 min ago'
-    }, 60000)
+    // Use shared processing function
+    const result = await processArrivalNoticeBuffer(req.file.buffer, 'upload', req.file.mimetype)
 
     res.json({
       ok: true,
-      extracted: {
-        containerNo,
-        eta,
-        port,
-        totalCharges,
-        carrier,
-        vessel,
-        voyage,
-        shipper,
-        consignee,
-        hsCode,
-        commodity
-      },
+      extracted: result.extracted,
       employee: employee,
       action: {
-        ...action,
-        time: formatTime(action.createdAt),
+        ...result.action,
+        time: formatTime(result.action.createdAt),
         agent: employee.name
       }
     })
 
   } catch (error) {
     console.error('Error processing arrival notice upload:', error)
-
-    // Still create an action for the attempt
-    const errorAction = {
-      id: String(actionCounter++),
-      employeeId: 'AI-EMP-001',
-      createdAt: new Date().toISOString(),
-      message: 'FreightBot Alpha attempted to parse arrival notice but encountered an error.'
-    }
-    actions.unshift(errorAction)
-
-    // Keep only last 50 actions
-    if (actions.length > 50) {
-      actions = actions.slice(0, 50)
-    }
-
     res.status(500).json({
       ok: false,
       error: error.message || 'Failed to process arrival notice'
@@ -686,10 +761,53 @@ app.get('/api/shipments', (req, res) => {
 })
 
 // ============================================================================
+// Email Status Endpoint
+// ============================================================================
+
+app.get('/api/email/status', (req, res) => {
+  res.json({
+    connected: emailStatus.connected,
+    lastConnectAt: emailStatus.lastConnectAt,
+    lastPollAt: emailStatus.lastPollAt,
+    lastError: emailStatus.lastError,
+    imapUser: process.env.IMAP_USER || null,
+  })
+})
+
+// Email processing activity - get recent email-processed shipments
+app.get('/api/email/activity', (req, res) => {
+  const emailShipments = shipments
+    .filter(s => s.source === 'email' && s.emailMetadata)
+    .sort((a, b) => {
+      const aTime = a.emailMetadata?.receivedAt || 0
+      const bTime = b.emailMetadata?.receivedAt || 0
+      return new Date(bTime) - new Date(aTime)
+    })
+    .slice(0, 20) // Last 20 email-processed shipments
+    .map(s => ({
+      shipmentId: s.id,
+      containerNo: s.containerNo,
+      subject: s.emailMetadata.subject,
+      from: s.emailMetadata.from,
+      receivedAt: s.emailMetadata.receivedAt,
+      attachmentName: s.emailMetadata.attachmentName,
+      attachmentSize: s.emailMetadata.attachmentSize,
+      currentPhase: s.currentPhase,
+      processedAt: s.lastUpdatedBy ? new Date().toISOString() : null
+    }))
+  
+  res.json(emailShipments)
+})
+
+// ============================================================================
 // Server Start
 // ============================================================================
 
 app.listen(PORT, () => {
   console.log(`🚀 AI Employee API server running on http://localhost:${PORT}`)
+  
+  // Start email watcher if configured
+  setProcessArrivalNoticeBuffer(processArrivalNoticeBuffer)
+  startEmailWatcher()
 })
 

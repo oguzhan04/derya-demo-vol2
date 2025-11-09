@@ -30,7 +30,9 @@ import {
   History,
   X,
   Send,
-  Info
+  Info,
+  Mail,
+  MailCheck
 } from 'lucide-react'
 import { PHASES_CONFIG, SHIPMENT_PHASES, getPhaseLabel, getStatusLabel, getStatusColor } from '../../types/Phases.js'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, ComposedChart } from 'recharts'
@@ -1004,7 +1006,7 @@ function EmployeeCard({ employee, onAction, onFileUpload }) {
 }
 
 // Ops AI Card Component
-function OpsAICard({ shipments, employees, onPhaseSelect, selectedPhase }) {
+function OpsAICard({ shipments, employees, onPhaseSelect, selectedPhase, actions = [] }) {
   // Calculate phase counts
   const phaseCounts = PHASES_CONFIG.reduce((acc, phase) => {
     acc[phase.id] = shipments.filter(s => s.currentPhase === phase.id).length
@@ -1026,70 +1028,268 @@ function OpsAICard({ shipments, employees, onPhaseSelect, selectedPhase }) {
     ? Math.round(employees.reduce((sum, e) => sum + (e.efficiency || 0), 0) / employees.length)
     : 0
 
+  // Find last email-processed action
+  const lastEmailAction = actions.find(a => 
+    a.message && a.message.includes('from email') && a.phase === 'intake'
+  )
+  
+  const formatLastEmailTime = (action) => {
+    if (!action) return null
+    const date = new Date(action.createdAt)
+    const now = new Date()
+    const diffMs = now - date
+    const diffMins = Math.floor(diffMs / 60000)
+    const diffHours = Math.floor(diffMs / 3600000)
+    const diffDays = Math.floor(diffMs / 86400000)
+    
+    if (diffMins < 1) return 'just now'
+    if (diffMins < 60) return `${diffMins}m ago`
+    if (diffHours < 24) return `${diffHours}h ago`
+    return `${diffDays}d ago`
+  }
+
+  // Email status hook
+  const [emailStatus, setEmailStatus] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    const fetchEmailStatus = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/email/status`)
+        if (response.ok) {
+          const data = await response.json()
+          if (!cancelled) {
+            setEmailStatus(data)
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch email status:', error)
+        if (!cancelled) {
+          setEmailStatus(prev => ({ ...(prev || {}), connected: false }))
+        }
+      }
+    }
+
+    // Fetch immediately
+    fetchEmailStatus()
+
+    // Poll every 10 seconds
+    const interval = setInterval(fetchEmailStatus, 10000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [])
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4 }}
-      className="bg-white dark:bg-gray-900 border-l-4 border-l-primary border-t border-r border-b border-gray-200 dark:border-gray-800 rounded-2xl shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_0_rgba(0,0,0,0.06)] hover:shadow-[0_4px_6px_-1px_rgba(0,0,0,0.1),0_2px_4px_-1px_rgba(0,0,0,0.06)] transition-all duration-200"
+      className="relative bg-white dark:bg-gray-900 border-l-4 border-l-primary border-t border-r border-b border-gray-200 dark:border-gray-800 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.08),0_1px_4px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgba(0,0,0,0.12),0_2px_8px_rgba(0,0,0,0.06)] transition-all duration-300 overflow-hidden group"
     >
-      <div className="p-6">
-        {/* Header */}
-        <div className="flex items-start justify-between mb-6">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-xl bg-primary/10 border-2 border-primary flex items-center justify-center">
-              <Bot className="w-7 h-7 text-primary" />
+      {/* Glowing background effect */}
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+      
+      <div className="relative p-8">
+        {/* Header - Enhanced */}
+        <div className="flex items-start justify-between mb-8">
+          <div className="flex items-center gap-5">
+            <div className="relative">
+              <div className="absolute inset-0 bg-primary/30 blur-2xl rounded-2xl animate-pulse"></div>
+              <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-br from-primary via-primary to-primary-dark flex items-center justify-center shadow-lg border-2 border-primary/20">
+                <Bot className="w-8 h-8 text-white" />
+              </div>
+              <div className="absolute -top-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full border-2 border-white dark:border-gray-900 animate-pulse"></div>
             </div>
             <div>
-              <h3 className="text-xl font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+              <h3 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3 mb-1">
                 Ops AI
-                <Sparkles className="w-4 h-4 text-primary" />
+                <motion.div
+                  animate={{ rotate: [0, 10, -10, 0] }}
+                  transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
+                >
+                  <Sparkles className="w-5 h-5 text-primary" />
+                </motion.div>
               </h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400">End-to-end shipment lifecycle automation</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400 font-medium">End-to-end shipment lifecycle automation</p>
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                  <Activity className="w-3 h-3" />
+                  GPT-4 Turbo
+                </span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">•</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">Real-time processing</span>
+                {emailStatus && (
+                  <>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">•</span>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={
+                          emailStatus.connected
+                            ? "inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400"
+                            : "inline-flex items-center rounded-full bg-rose-50 dark:bg-rose-900/30 px-2 py-0.5 text-[10px] font-medium text-rose-700 dark:text-rose-400"
+                        }
+                      >
+                        {emailStatus.connected ? (
+                          <>
+                            <motion.span
+                              animate={{ opacity: [1, 0.5, 1] }}
+                              transition={{ duration: 2, repeat: Infinity }}
+                              className="mr-1"
+                            >
+                              ●
+                            </motion.span>
+                            Gmail: Online
+                            {emailStatus.imapUser ? ` (${emailStatus.imapUser})` : ""}
+                          </>
+                        ) : (
+                          <>● Gmail: Offline</>
+                        )}
+                      </span>
+                      {emailStatus.connected && emailStatus.lastPollAt && (
+                        <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                          {(() => {
+                            const lastPoll = new Date(emailStatus.lastPollAt)
+                            const now = new Date()
+                            const diffMs = now - lastPoll
+                            const diffSecs = Math.floor(diffMs / 1000)
+                            if (diffSecs < 60) return `${diffSecs}s ago`
+                            const diffMins = Math.floor(diffSecs / 60)
+                            return `${diffMins}m ago`
+                          })()}
+                        </span>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
-          <motion.span 
-            animate={{ opacity: [1, 0.7, 1] }}
+          <motion.div
+            animate={{ 
+              boxShadow: [
+                '0 0 0 0 rgba(16, 185, 129, 0.4)',
+                '0 0 0 8px rgba(16, 185, 129, 0)',
+                '0 0 0 0 rgba(16, 185, 129, 0)'
+              ]
+            }}
             transition={{ duration: 2, repeat: Infinity }}
-            className="px-3 py-1 bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-full text-[10px] font-semibold uppercase tracking-wide shadow-sm"
+            className="relative"
           >
-            ACTIVE
-          </motion.span>
+            <motion.span 
+              animate={{ opacity: [1, 0.8, 1] }}
+              transition={{ duration: 2, repeat: Infinity }}
+              className="relative px-4 py-2 bg-gradient-to-r from-emerald-500 via-green-500 to-emerald-600 text-white rounded-full text-xs font-bold uppercase tracking-wider shadow-lg"
+            >
+              <span className="relative z-10">ACTIVE</span>
+              <div className="absolute inset-0 bg-emerald-400 rounded-full blur-md opacity-50 animate-pulse"></div>
+            </motion.span>
+          </motion.div>
         </div>
 
-        {/* Phase Pipeline */}
-        <div className="mb-6">
-          <div className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">Shipment Pipeline</div>
-          <div className="flex items-stretch gap-3">
-            {PHASES_CONFIG.map((phase) => {
+        {/* Phase Pipeline - Enhanced */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <div className="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider flex items-center gap-2">
+              <div className="w-1 h-4 bg-primary rounded-full"></div>
+              Shipment Pipeline
+            </div>
+            <div className="flex items-center gap-4">
+              <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">{shipments.length} total</span>
+              {lastEmailAction && (
+                <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                  <MessageSquare className="w-3 h-3" />
+                  Last email: {formatLastEmailTime(lastEmailAction)}
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="grid grid-cols-5 gap-2 relative">
+            {/* Connecting flow lines between stages */}
+            <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-gradient-to-r from-blue-200 via-purple-200 via-yellow-200 to-green-200 dark:from-blue-800 dark:via-purple-800 dark:via-yellow-800 dark:to-green-800 opacity-30 -translate-y-1/2 pointer-events-none" style={{ marginLeft: '8%', marginRight: '8%' }}></div>
+            
+            {PHASES_CONFIG.map((phase, idx) => {
               const count = phaseCounts[phase.id] || 0
               const isSelected = selectedPhase === phase.id
               const hasIssues = phase.id === 'compliance' && complianceIssuesCount > 0
+              const percentage = shipments.length > 0 ? (count / shipments.length) * 100 : 0
+              const nextPhase = PHASES_CONFIG[idx + 1]
+              
               return (
-                <button
-                  key={phase.id}
-                  onClick={() => onPhaseSelect(phase.id)}
-                  className={`flex-1 rounded-xl border-2 px-3 py-3 text-left transition-all duration-200 ${
-                    isSelected
-                      ? `${phase.borderColor} ${phase.bgColor} border-opacity-100 shadow-md`
-                      : 'border-gray-200 dark:border-gray-700 bg-slate-50 dark:bg-gray-800 hover:bg-slate-100 dark:hover:bg-gray-700'
-                  }`}
-                >
-                  <div className={`text-xs font-medium uppercase tracking-wide mb-1 ${
-                    isSelected ? phase.textColor : 'text-gray-500 dark:text-gray-400'
+                <div key={phase.id} className="relative flex items-center">
+                  <motion.button
+                    onClick={() => onPhaseSelect(phase.id)}
+                    whileHover={{ scale: 1.02, y: -2 }}
+                    whileTap={{ scale: 0.98 }}
+                    className={`relative flex flex-col rounded-2xl border-2 px-4 py-4 text-left transition-all duration-300 overflow-hidden w-full ${
+                      isSelected
+                        ? `${phase.borderColor} ${phase.bgColor} border-opacity-100 shadow-lg shadow-${phase.color}-500/20`
+                        : 'border-gray-200 dark:border-gray-700 bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 hover:border-gray-300 dark:hover:border-gray-600 hover:shadow-md'
+                    }`}
+                  >
+                    {/* Progress bar at bottom */}
+                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-100 dark:bg-gray-700">
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${percentage}%` }}
+                        transition={{ duration: 0.8, delay: idx * 0.1 }}
+                        className={`h-full bg-gradient-to-r ${phase.color === 'blue' ? 'from-blue-500 to-blue-600' : 
+                          phase.color === 'purple' ? 'from-purple-500 to-purple-600' :
+                          phase.color === 'yellow' ? 'from-yellow-500 to-yellow-600' :
+                          phase.color === 'green' ? 'from-green-500 to-green-600' :
+                          'from-indigo-500 to-indigo-600'}`}
+                      />
+                    </div>
+                  
+                  <div className={`text-[10px] font-bold uppercase tracking-widest mb-2 relative z-10 ${
+                    isSelected ? `${phase.textColor} font-extrabold` : 'text-gray-500 dark:text-gray-400'
                   }`}>
                     {phase.label}
                   </div>
-                  <div className={`text-lg font-semibold ${
-                    isSelected ? 'text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300'
-                  }`}>
-                    {count}
+                  <div className="flex items-baseline gap-2 mb-1 relative z-10">
+                    <div className={`text-2xl font-bold ${
+                      isSelected ? 'text-gray-900 dark:text-white' : 'text-gray-800 dark:text-gray-200'
+                    }`}>
+                      {count}
+                    </div>
                     {hasIssues && (
-                      <span className="ml-1 text-xs text-yellow-600 dark:text-yellow-400">({complianceIssuesCount} issues)</span>
+                      <motion.span 
+                        animate={{ scale: [1, 1.1, 1] }}
+                        transition={{ duration: 1.5, repeat: Infinity }}
+                        className="text-xs font-semibold text-yellow-600 dark:text-yellow-400 bg-yellow-100 dark:bg-yellow-900/30 px-2 py-0.5 rounded-full"
+                      >
+                        {complianceIssuesCount} ⚠
+                      </motion.span>
                     )}
                   </div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">shipments</div>
-                </button>
+                  <div className={`text-[10px] font-medium relative z-10 ${
+                    isSelected ? 'text-gray-700 dark:text-gray-300' : 'text-gray-500 dark:text-gray-400'
+                  }`}>
+                    shipments
+                  </div>
+                  
+                    {/* Glow effect when selected - behind content */}
+                    {isSelected && (
+                      <div className={`absolute inset-0 bg-gradient-to-br from-${phase.color}-500/10 to-transparent pointer-events-none z-0`}></div>
+                    )}
+                  </motion.button>
+                  
+                  {/* Arrow connector to next phase */}
+                  {nextPhase && idx < PHASES_CONFIG.length - 1 && (
+                    <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-10">
+                      <div className={`w-4 h-4 rounded-full bg-gradient-to-r ${
+                        phase.color === 'blue' ? 'from-blue-200 to-purple-200' :
+                        phase.color === 'purple' ? 'from-purple-200 to-yellow-200' :
+                        phase.color === 'yellow' ? 'from-yellow-200 to-green-200' :
+                        'from-green-200 to-indigo-200'
+                      } dark:from-gray-700 dark:to-gray-700 flex items-center justify-center`}>
+                        <ChevronDown className="w-2 h-2 text-gray-600 dark:text-gray-400 rotate-[-90deg]" />
+                      </div>
+                    </div>
+                  )}
+                </div>
               )
             })}
           </div>
@@ -1106,24 +1306,97 @@ function OpsAICard({ shipments, employees, onPhaseSelect, selectedPhase }) {
           </div>
         )}
 
-        {/* Metrics Grid */}
-        <div className="grid grid-cols-4 gap-3">
-          <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
-            <div className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Tasks Executed</div>
-            <div className="text-2xl font-bold text-gray-900 dark:text-white">{totalTasks}</div>
-          </div>
-          <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
-            <div className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Success Rate</div>
-            <div className="text-2xl font-bold text-gray-900 dark:text-white">{avgSuccessRate}%</div>
-          </div>
-          <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
-            <div className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Pending Jobs</div>
-            <div className="text-2xl font-bold text-gray-900 dark:text-white">{totalQueue}</div>
-          </div>
-          <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
-            <div className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Efficiency</div>
-            <div className="text-2xl font-bold text-gray-900 dark:text-white">{avgEfficiency}%</div>
-          </div>
+        {/* Metrics Grid - Enhanced */}
+        <div className="grid grid-cols-4 gap-4">
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="relative bg-gradient-to-br from-blue-50 to-blue-100/50 dark:from-blue-900/20 dark:to-blue-800/10 rounded-xl p-5 border border-blue-200/50 dark:border-blue-800/50 hover:shadow-lg transition-all duration-300 group overflow-hidden"
+          >
+            <div className="absolute top-0 right-0 w-20 h-20 bg-blue-500/10 rounded-full blur-2xl group-hover:bg-blue-500/20 transition-colors"></div>
+            <div className="relative">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-8 h-8 rounded-lg bg-blue-500/20 dark:bg-blue-500/30 flex items-center justify-center">
+                  <Zap className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div className="text-[10px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Tasks Executed</div>
+              </div>
+              <div className="text-3xl font-bold text-gray-900 dark:text-white mb-1">{totalTasks}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                <TrendingUp className="w-3 h-3 text-emerald-500" />
+                <span className="text-emerald-600 dark:text-emerald-400 font-semibold">+12%</span>
+                <span className="text-gray-400">vs last week</span>
+              </div>
+            </div>
+          </motion.div>
+          
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="relative bg-gradient-to-br from-emerald-50 to-emerald-100/50 dark:from-emerald-900/20 dark:to-emerald-800/10 rounded-xl p-5 border border-emerald-200/50 dark:border-emerald-800/50 hover:shadow-lg transition-all duration-300 group overflow-hidden"
+          >
+            <div className="absolute top-0 right-0 w-20 h-20 bg-emerald-500/10 rounded-full blur-2xl group-hover:bg-emerald-500/20 transition-colors"></div>
+            <div className="relative">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/20 dark:bg-emerald-500/30 flex items-center justify-center">
+                  <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <div className="text-[10px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Success Rate</div>
+              </div>
+              <div className="text-3xl font-bold text-gray-900 dark:text-white mb-1">{avgSuccessRate}%</div>
+              <div className="w-full h-1.5 bg-emerald-100 dark:bg-emerald-900/30 rounded-full mt-2">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${avgSuccessRate}%` }}
+                  transition={{ duration: 1, delay: 0.3 }}
+                  className="h-full bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-full"
+                />
+              </div>
+            </div>
+          </motion.div>
+          
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="relative bg-gradient-to-br from-amber-50 to-amber-100/50 dark:from-amber-900/20 dark:to-amber-800/10 rounded-xl p-5 border border-amber-200/50 dark:border-amber-800/50 hover:shadow-lg transition-all duration-300 group overflow-hidden"
+          >
+            <div className="absolute top-0 right-0 w-20 h-20 bg-amber-500/10 rounded-full blur-2xl group-hover:bg-amber-500/20 transition-colors"></div>
+            <div className="relative">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-8 h-8 rounded-lg bg-amber-500/20 dark:bg-amber-500/30 flex items-center justify-center">
+                  <Clock className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                </div>
+                <div className="text-[10px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Pending Jobs</div>
+              </div>
+              <div className="text-3xl font-bold text-gray-900 dark:text-white mb-1">{totalQueue}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">In queue</div>
+            </div>
+          </motion.div>
+          
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+            className="relative bg-gradient-to-br from-purple-50 to-purple-100/50 dark:from-purple-900/20 dark:to-purple-800/10 rounded-xl p-5 border border-purple-200/50 dark:border-purple-800/50 hover:shadow-lg transition-all duration-300 group overflow-hidden"
+          >
+            <div className="absolute top-0 right-0 w-20 h-20 bg-purple-500/10 rounded-full blur-2xl group-hover:bg-purple-500/20 transition-colors"></div>
+            <div className="relative">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-8 h-8 rounded-lg bg-purple-500/20 dark:bg-purple-500/30 flex items-center justify-center">
+                  <Activity className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                </div>
+                <div className="text-[10px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Efficiency</div>
+              </div>
+              <div className="text-3xl font-bold text-gray-900 dark:text-white mb-1">{avgEfficiency}%</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                <BarChart3 className="w-3 h-3 text-purple-500" />
+                <span>Optimal</span>
+              </div>
+            </div>
+          </motion.div>
         </div>
       </div>
     </motion.div>
@@ -1152,57 +1425,89 @@ function ActivityFeed({ actions, previousActionIds }) {
   }, [actions])
 
   return (
-    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_0_rgba(0,0,0,0.06)] p-6 hover:scale-[1.01] transition-all duration-200">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <Zap className="w-5 h-5 text-gray-500 dark:text-gray-400" />
-          <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Recent AI Actions</h3>
-          <motion.div
-            animate={{ opacity: [1, 0.5, 1] }}
-            transition={{ duration: 2, repeat: Infinity }}
-            className="w-2 h-2 bg-success rounded-full ml-2"
-          />
-      </div>
-        {timeAgo && (
-          <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">Updated {timeAgo}</span>
-        )}
-      </div>
-      <div className="space-y-0 max-h-96 overflow-y-auto">
-        {actions.length === 0 ? (
-          <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">No actions yet</div>
-        ) : (
-          <AnimatePresence mode="popLayout">
-            {actions.map((action, index) => {
-              const isNew = previousActionIds && !previousActionIds.has(action.id)
-              return (
-                <motion.div
-                  key={action.id}
-                  variants={actionItemVariants}
-                  initial={isNew ? "initial" : false}
-                  animate="animate"
-                  exit="exit"
-                  transition={{ duration: 0.5, delay: isNew ? index * 0.05 : 0 }}
-                  className={`flex gap-3 text-sm py-3 px-2 rounded-lg ${index % 2 === 0 ? 'bg-white dark:bg-gray-900' : 'bg-gray-50 dark:bg-gray-800'}`}
-                >
-                  <span className="text-gray-500 dark:text-gray-400 font-mono text-xs flex-shrink-0 w-12 text-right">{action.time}</span>
-              <div className="flex-1 flex items-center gap-2">
-                    {action.phase && (
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        PHASES_CONFIG.find(p => p.id === action.phase)?.bgColor || 'bg-slate-100 dark:bg-slate-800'
-                      } ${
-                        PHASES_CONFIG.find(p => p.id === action.phase)?.textColor || 'text-slate-600 dark:text-slate-400'
-                      }`}>
-                        {getPhaseLabel(action.phase)}
-                      </span>
-                    )}
-                    <span className="font-semibold text-gray-900 dark:text-white">{action.agent}</span>
-                    <span className="text-gray-500 dark:text-gray-400"> {action.message}</span>
+    <div className="relative bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-[0_4px_20px_rgba(0,0,0,0.08)] p-6 hover:shadow-[0_8px_30px_rgba(0,0,0,0.12)] transition-all duration-300 overflow-hidden group">
+      {/* Subtle gradient overlay */}
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
+      
+      <div className="relative">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <div className="absolute inset-0 bg-primary/20 blur-xl rounded-lg"></div>
+              <div className="relative w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center">
+                <Zap className="w-5 h-5 text-white" />
               </div>
-                </motion.div>
-              )
-            })}
-          </AnimatePresence>
-        )}
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white">Recent AI Actions</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Live activity stream</p>
+            </div>
+            <motion.div
+              animate={{ 
+                scale: [1, 1.2, 1],
+                opacity: [1, 0.7, 1]
+              }}
+              transition={{ duration: 2, repeat: Infinity }}
+              className="w-2.5 h-2.5 bg-emerald-500 rounded-full ml-2 shadow-lg shadow-emerald-500/50"
+            />
+          </div>
+          {timeAgo && (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 dark:bg-gray-800 rounded-lg">
+              <Clock className="w-3 h-3 text-gray-500 dark:text-gray-400" />
+              <span className="text-xs text-gray-600 dark:text-gray-400 font-mono font-semibold">{timeAgo}</span>
+            </div>
+          )}
+        </div>
+        <div className="space-y-0 max-h-96 overflow-y-auto">
+          {actions.length === 0 ? (
+            <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">No actions yet</div>
+          ) : (
+            <AnimatePresence mode="popLayout">
+              {actions.slice(0, 10).map((action, index) => {
+                const isNew = previousActionIds && !previousActionIds.has(action.id)
+                return (
+                  <motion.div
+                    key={action.id}
+                    variants={actionItemVariants}
+                    initial={isNew ? "initial" : false}
+                    animate="animate"
+                    exit="exit"
+                    transition={{ duration: 0.5, delay: isNew ? index * 0.05 : 0 }}
+                    className={`flex gap-3 text-sm py-3 px-2 rounded-lg ${index % 2 === 0 ? 'bg-white dark:bg-gray-900' : 'bg-gray-50 dark:bg-gray-800'}`}
+                  >
+                    <span className="text-gray-500 dark:text-gray-400 font-mono text-xs flex-shrink-0 w-16 text-right">
+                      {(() => {
+                        if (!action.createdAt) return action.time || '—'
+                        const date = new Date(action.createdAt)
+                        const now = new Date()
+                        const diffMs = now - date
+                        const diffMins = Math.floor(diffMs / 60000)
+                        const diffHours = Math.floor(diffMs / 3600000)
+                        if (diffMins < 1) return 'now'
+                        if (diffMins < 60) return `${diffMins}m`
+                        if (diffHours < 24) return `${diffHours}h`
+                        return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+                      })()}
+                    </span>
+                    <div className="flex-1 flex items-center gap-2">
+                      {action.phase && (
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                          PHASES_CONFIG.find(p => p.id === action.phase)?.bgColor || 'bg-slate-100 dark:bg-slate-800'
+                        } ${
+                          PHASES_CONFIG.find(p => p.id === action.phase)?.textColor || 'text-slate-600 dark:text-slate-400'
+                        }`}>
+                          {getPhaseLabel(action.phase)}
+                        </span>
+                      )}
+                      <span className="font-semibold text-gray-900 dark:text-white">{action.agent}</span>
+                      <span className="text-gray-500 dark:text-gray-400"> {action.message}</span>
+                    </div>
+                  </motion.div>
+                )
+              })}
+            </AnimatePresence>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -1299,7 +1604,492 @@ const CustomTooltip = ({ active, payload }) => {
 // Main Component
 // ============================================================================
 
-function ShipmentsTable({ shipments, previousShipmentIds, selectedPhase }) {
+// ============================================================================
+// Shipment Detail Drawer Component
+// ============================================================================
+
+function ShipmentDetailDrawer({ shipment, actions, onClose, onRecheckCompliance, onAdvancePhaseDebug }) {
+  if (!shipment) return null
+
+  // Filter actions for this shipment by container number
+  const shipmentActions = actions
+    .filter(action => {
+      const containerNo = shipment.containerNo || shipment.id
+      return action.message && action.message.includes(containerNo)
+    })
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(0, 5)
+
+  // Format time helper
+  const formatTime = (dateString) => {
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffMs = now - date
+    const diffMins = Math.floor(diffMs / 60000)
+    const diffHours = Math.floor(diffMs / 3600000)
+    
+    if (diffMins < 1) return 'just now'
+    if (diffMins < 60) return `${diffMins}m ago`
+    if (diffHours < 24) return `${diffHours}h ago`
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  }
+
+  // Get phase status icon
+  const getPhaseIcon = (phaseId) => {
+    const progress = shipment.phaseProgress?.[phaseId] || 'pending'
+    if (progress === 'done') return '✓'
+    if (progress === 'in_progress') return '⏳'
+    return '○'
+  }
+
+  // Get phase sublabel
+  const getPhaseSublabel = (phaseId) => {
+    const labels = {
+      intake: 'Docs',
+      compliance: 'Customs',
+      monitoring: 'Tracking',
+      arrival: 'Delivery',
+      billing: 'Billing'
+    }
+    return labels[phaseId] || ''
+  }
+
+  const containerNo = shipment.containerNo || shipment.id || 'Unknown'
+  const eta = shipment.eta || shipment.arrivalDate || shipment.promisedDate
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 bg-black/50 dark:bg-black/70 z-50 flex items-center justify-end"
+        onClick={onClose}
+      >
+        <motion.div
+          initial={{ x: '100%' }}
+          animate={{ x: 0 }}
+          exit={{ x: '100%' }}
+          transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+          onClick={(e) => e.stopPropagation()}
+          className="w-full max-w-md h-full bg-white dark:bg-gray-900 shadow-2xl flex flex-col overflow-hidden"
+        >
+          {/* Header */}
+          <div className="p-6 border-b border-gray-200 dark:border-gray-800 bg-gradient-to-br from-gray-50 to-white dark:from-gray-900 dark:to-gray-800">
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex-1">
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                  Container {containerNo}
+                </h2>
+                <div className="space-y-1 text-sm text-gray-600 dark:text-gray-400">
+                  <div className="flex items-center gap-2">
+                    <Truck className="w-4 h-4" />
+                    <span>{shipment.carrier || '—'}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Navigation2 className="w-4 h-4" />
+                    <span>{shipment.port || shipment.origin || '—'}</span>
+                  </div>
+                  {eta && (
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4" />
+                      <span>{new Date(eta).toLocaleString('en-US', { 
+                        month: 'short', 
+                        day: 'numeric', 
+                        year: 'numeric',
+                        hour: '2-digit', 
+                        minute: '2-digit' 
+                      })}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={onClose}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+              </button>
+            </div>
+            
+            {/* Phase badges */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {shipment.currentPhase && (
+                <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                  PHASES_CONFIG.find(p => p.id === shipment.currentPhase)?.bgColor || 'bg-slate-100 dark:bg-slate-800'
+                } ${
+                  PHASES_CONFIG.find(p => p.id === shipment.currentPhase)?.textColor || 'text-slate-600 dark:text-slate-400'
+                }`}>
+                  {getPhaseLabel(shipment.currentPhase)}
+                </span>
+              )}
+              {shipment.phaseProgress && shipment.currentPhase && (
+                <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(shipment.phaseProgress[shipment.currentPhase])}`}>
+                  {getStatusLabel(shipment.phaseProgress[shipment.currentPhase])}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Content - Scrollable */}
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            {/* Email Source & Timeline */}
+            {shipment.source === 'email' && shipment.emailMetadata && (
+              <div>
+                <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-4 flex items-center gap-2">
+                  <Mail className="w-4 h-4" />
+                  Email Source
+                </h3>
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                      <Mail className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-gray-900 dark:text-white text-sm mb-1">
+                        {shipment.emailMetadata.subject || 'No subject'}
+                      </div>
+                      <div className="text-xs text-gray-600 dark:text-gray-400 space-y-1">
+                        <div>From: {shipment.emailMetadata.from || 'Unknown'}</div>
+                        <div>Received: {new Date(shipment.emailMetadata.receivedAt).toLocaleString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}</div>
+                        <div className="flex items-center gap-2 mt-2">
+                          <FileText className="w-3 h-3" />
+                          <span>{shipment.emailMetadata.attachmentName || 'unnamed.pdf'}</span>
+                          <span className="text-gray-500">({(shipment.emailMetadata.attachmentSize / 1024).toFixed(1)} KB)</span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          // Open email source modal - we'll add this state
+                          const modal = document.getElementById('email-source-modal')
+                          if (modal) modal.style.display = 'flex'
+                        }}
+                        className="mt-3 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium flex items-center gap-1"
+                      >
+                        <Mail className="w-3 h-3" />
+                        View Email Source
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Email Source Modal */}
+                <div id="email-source-modal" className="hidden fixed inset-0 bg-black/50 dark:bg-black/70 z-[60] flex items-center justify-center p-4" onClick={(e) => {
+                  if (e.target.id === 'email-source-modal') {
+                    e.target.style.display = 'none'
+                  }
+                }}>
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto"
+                  >
+                    <div className="p-6 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
+                      <h3 className="text-xl font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                        <Mail className="w-5 h-5" />
+                        Email Source
+                      </h3>
+                      <button onClick={(e) => {
+                        const modal = e.target.closest('#email-source-modal')
+                        if (modal) modal.style.display = 'none'
+                      }} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg">
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                    <div className="p-6 space-y-4">
+                      <div>
+                        <div className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Subject</div>
+                        <div className="text-sm text-gray-900 dark:text-white">{shipment.emailMetadata.subject || 'No subject'}</div>
+                      </div>
+                      <div>
+                        <div className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">From</div>
+                        <div className="text-sm text-gray-900 dark:text-white">{shipment.emailMetadata.from || 'Unknown'}</div>
+                      </div>
+                      <div>
+                        <div className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Received</div>
+                        <div className="text-sm text-gray-900 dark:text-white">
+                          {new Date(shipment.emailMetadata.receivedAt).toLocaleString('en-US', {
+                            month: 'long',
+                            day: 'numeric',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit'
+                          })}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Attachment</div>
+                        <div className="flex items-center gap-2 text-sm text-gray-900 dark:text-white">
+                          <FileText className="w-4 h-4" />
+                          <span>{shipment.emailMetadata.attachmentName || 'unnamed.pdf'}</span>
+                          <span className="text-gray-500">({(shipment.emailMetadata.attachmentSize / 1024).toFixed(1)} KB)</span>
+                        </div>
+                      </div>
+                      <div className="pt-4 border-t border-gray-200 dark:border-gray-800">
+                        <div className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">PDF Preview</div>
+                        <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 text-center text-sm text-gray-500 dark:text-gray-400">
+                          PDF preview would be displayed here
+                          <div className="mt-2 text-xs">(PDF viewer integration can be added here)</div>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                </div>
+                
+                {/* Email-to-Shipment Timeline */}
+                <div className="mt-4">
+                  <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-3">
+                    Processing Timeline
+                  </h4>
+                  <div className="space-y-2 relative">
+                    {/* Connecting lines */}
+                    <div className="absolute left-3 top-6 bottom-6 w-0.5 bg-gradient-to-b from-blue-200 via-purple-200 to-green-200 dark:from-blue-800 dark:via-purple-800 dark:to-green-800"></div>
+                    
+                    <div className="flex items-center gap-3 text-sm relative z-10">
+                      <div className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center border-2 border-blue-300 dark:border-blue-700">
+                        <CheckCircle className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-900 dark:text-white">Email Received</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {(() => {
+                            const date = new Date(shipment.emailMetadata.receivedAt)
+                            const now = new Date()
+                            const diffMs = now - date
+                            const diffMins = Math.floor(diffMs / 60000)
+                            const diffHours = Math.floor(diffMs / 3600000)
+                            if (diffMins < 1) return 'just now'
+                            if (diffMins < 60) return `${diffMins}m ago`
+                            if (diffHours < 24) return `${diffHours}h ago`
+                            return date.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                          })()}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 text-sm relative z-10">
+                      <div className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center border-2 border-blue-300 dark:border-blue-700">
+                        <CheckCircle className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-900 dark:text-white">PDF Extracted</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {shipment.emailMetadata.attachmentName || 'unnamed.pdf'}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 text-sm relative z-10">
+                      <div className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center border-2 border-blue-300 dark:border-blue-700">
+                        <CheckCircle className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-900 dark:text-white">AI Parsed</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          Container {containerNo} identified
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 text-sm relative z-10">
+                      <div className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center border-2 ${
+                        shipment.currentPhase === 'intake' ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700' :
+                        shipment.currentPhase === 'compliance' ? 'bg-purple-100 dark:bg-purple-900/30 border-purple-300 dark:border-purple-700' :
+                        shipment.currentPhase === 'monitoring' ? 'bg-yellow-100 dark:bg-yellow-900/30 border-yellow-300 dark:border-yellow-700' :
+                        'bg-green-100 dark:bg-green-900/30 border-green-300 dark:border-green-700'
+                      }`}>
+                        {shipment.currentPhase === 'intake' || shipment.currentPhase === 'compliance' ? (
+                          <Loader2 className={`w-4 h-4 animate-spin ${
+                            shipment.currentPhase === 'intake' ? 'text-blue-600 dark:text-blue-400' :
+                            'text-purple-600 dark:text-purple-400'
+                          }`} />
+                        ) : (
+                          <CheckCircle className={`w-4 h-4 ${
+                            shipment.currentPhase === 'monitoring' ? 'text-yellow-600 dark:text-yellow-400' :
+                            'text-green-600 dark:text-green-400'
+                          }`} />
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-900 dark:text-white">
+                          {shipment.currentPhase === 'intake' ? 'Shipment Created' :
+                           shipment.currentPhase === 'compliance' ? 'Compliance Check' :
+                           shipment.currentPhase === 'monitoring' ? 'In Monitoring' :
+                           'Completed'}
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {shipment.currentPhase === 'monitoring' ? (
+                            <span className="flex items-center gap-1">
+                              <CheckCircle className="w-3 h-3 text-green-500" />
+                              All caught up
+                            </span>
+                          ) : (
+                            getPhaseLabel(shipment.currentPhase || 'intake')
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Phase Timeline */}
+            <div>
+              <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-4 flex items-center gap-2">
+                <div className="w-1 h-4 bg-primary rounded-full"></div>
+                Phase Timeline
+              </h3>
+              <div className="space-y-3">
+                {PHASES_CONFIG.map((phase, idx) => {
+                  const progress = shipment.phaseProgress?.[phase.id] || 'pending'
+                  const isCurrent = shipment.currentPhase === phase.id
+                  const isDone = progress === 'done'
+                  const isInProgress = progress === 'in_progress'
+                  
+                  return (
+                    <div
+                      key={phase.id}
+                      className={`flex items-center gap-3 p-3 rounded-lg ${
+                        isCurrent && isInProgress
+                          ? 'bg-primary/10 border-l-4 border-l-primary'
+                          : isDone
+                          ? 'bg-gray-50 dark:bg-gray-800/50'
+                          : 'bg-gray-50/50 dark:bg-gray-800/30'
+                      }`}
+                    >
+                      <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold ${
+                        isDone
+                          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                          : isInProgress
+                          ? 'bg-primary/20 text-primary dark:text-primary'
+                          : 'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
+                      }`}>
+                        {getPhaseIcon(phase.id)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-gray-900 dark:text-white text-sm">
+                          {phase.label}
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {getPhaseSublabel(phase.id)}
+                        </div>
+                      </div>
+                      {isCurrent && (
+                        <span className="text-xs text-primary font-medium">Current</span>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Compliance Section */}
+            {shipment.complianceStatus && (
+              <div>
+                <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-4 flex items-center gap-2">
+                  <div className="w-1 h-4 bg-primary rounded-full"></div>
+                  Compliance
+                </h3>
+                <div className="space-y-3">
+                  <div>
+                    {shipment.complianceStatus === 'ok' ? (
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                        ✓ OK
+                      </span>
+                    ) : shipment.complianceStatus === 'issues' ? (
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">
+                        ⚠ Issues
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400">
+                        Pending
+                      </span>
+                    )}
+                  </div>
+                  {shipment.complianceIssues && Array.isArray(shipment.complianceIssues) && shipment.complianceIssues.length > 0 && (
+                    <ul className="mt-2 list-disc pl-5 text-sm text-gray-600 dark:text-gray-400 space-y-1">
+                      {shipment.complianceIssues.map((issue, idx) => (
+                        <li key={idx}>{issue}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Recent Actions */}
+            <div>
+              <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-4 flex items-center gap-2">
+                <div className="w-1 h-4 bg-primary rounded-full"></div>
+                Recent AI Actions
+              </h3>
+              {shipmentActions.length > 0 ? (
+                <div className="space-y-2">
+                  {shipmentActions.map((action) => (
+                    <div
+                      key={action.id}
+                      className="p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700"
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-1">
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded ${
+                          action.phase === 'intake' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' :
+                          action.phase === 'compliance' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400' :
+                          action.phase === 'monitoring' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400' :
+                          'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-400'
+                        }`}>
+                          {action.phase ? action.phase.toUpperCase() : 'ACTION'}
+                        </span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          {formatTime(action.createdAt)}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">{action.message}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500 dark:text-gray-400">No actions yet for this shipment.</p>
+              )}
+            </div>
+          </div>
+
+          {/* Footer Controls */}
+          <div className="p-6 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50 space-y-2">
+            {onRecheckCompliance && (
+              <button
+                onClick={onRecheckCompliance}
+                className="w-full px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Re-run Compliance Check
+              </button>
+            )}
+            {onAdvancePhaseDebug && (
+              <button
+                onClick={onAdvancePhaseDebug}
+                className="w-full px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+              >
+                <Settings className="w-4 h-4" />
+                Advance Phase (Debug)
+              </button>
+            )}
+            <p className="text-xs text-gray-500 dark:text-gray-400 text-center mt-2">
+              Debug / Operator controls
+            </p>
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  )
+}
+
+function ShipmentsTable({ shipments, previousShipmentIds, selectedPhase, onShipmentClick }) {
   const [highlightedIds, setHighlightedIds] = useState(new Set())
   
   // Filter shipments by phase
@@ -1375,9 +2165,38 @@ function ShipmentsTable({ shipments, previousShipmentIds, selectedPhase }) {
                   initial={highlightedIds.has(shipment.id) ? { backgroundColor: '#FEF3C7' } : false}
                   animate={{ backgroundColor: index % 2 === 0 ? 'transparent' : '#F9FAFB' }}
                   transition={{ duration: 0.6 }}
-                  className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                  onClick={() => onShipmentClick && onShipmentClick(shipment)}
+                  className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer"
                 >
-                  <td className="py-3 px-4 text-sm font-semibold text-gray-900 dark:text-white">{shipment.id || shipment.containerNo || '—'}</td>
+                  <td className="py-3 px-4 text-sm font-semibold text-gray-900 dark:text-white">
+                    <div className="flex items-center gap-2">
+                      <span>{shipment.id || shipment.containerNo || '—'}</span>
+                      {shipment.source === 'email' && (
+                        <span 
+                          className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 group/badge relative cursor-help" 
+                          title="Processed via Email Automation"
+                        >
+                          <Mail className="w-3 h-3 mr-0.5" />
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 dark:bg-gray-800 text-white text-xs rounded opacity-0 group-hover/badge:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
+                            Processed via Email Automation
+                            <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900 dark:border-t-gray-800"></div>
+                          </div>
+                        </span>
+                      )}
+                      {shipment.source === 'upload' && (
+                        <span 
+                          className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 group/badge relative cursor-help"
+                          title="Manual Upload"
+                        >
+                          <Upload className="w-3 h-3 mr-0.5" />
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 dark:bg-gray-800 text-white text-xs rounded opacity-0 group-hover/badge:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
+                            Manual Upload
+                            <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900 dark:border-t-gray-800"></div>
+                          </div>
+                        </span>
+                      )}
+                    </div>
+                  </td>
                   <td className="py-3 px-4 text-sm text-gray-700 dark:text-gray-300">{shipment.carrier || '—'}</td>
                   <td className="py-3 px-4 text-sm text-gray-700 dark:text-gray-300">{shipment.origin || shipment.port || '—'}</td>
                   <td className="py-3 px-4 text-sm text-gray-700 dark:text-gray-300">
@@ -1467,6 +2286,9 @@ export default function ManageAgents() {
   const [previousActionIds, setPreviousActionIds] = useState(new Set())
   const [selectedPhase, setSelectedPhase] = useState('all')
   const [isDebugLoading, setIsDebugLoading] = useState(null)
+  const [selectedShipment, setSelectedShipment] = useState(null)
+  const [isDetailOpen, setIsDetailOpen] = useState(false)
+  const [toast, setToast] = useState(null)
 
   // Fetch employees, actions, and shipments
   const fetchData = async () => {
@@ -1491,6 +2313,26 @@ export default function ManageAgents() {
 
       if (shipmentsRes.ok) {
         const shipmentsData = await shipmentsRes.json()
+        
+        // Detect new email-processed shipments and show toast
+        if (previousShipmentIds.size > 0) {
+          const newEmailShipments = shipmentsData.filter(s => 
+            s.source === 'email' && 
+            !previousShipmentIds.has(s.id) &&
+            s.emailMetadata
+          )
+          
+          if (newEmailShipments.length > 0) {
+            const containerNo = newEmailShipments[0].containerNo || newEmailShipments[0].id
+            setToast({
+              message: `📧 Parsed new arrival notice: ${containerNo}`,
+              type: 'success'
+            })
+            // Auto-dismiss after 4 seconds
+            setTimeout(() => setToast(null), 4000)
+          }
+        }
+        
         // Track previous shipment IDs for highlighting new ones
         setPreviousShipmentIds(new Set(shipments.map(s => s.id)))
         setShipments(shipmentsData)
@@ -1637,6 +2479,94 @@ export default function ManageAgents() {
     }
   }
 
+  // Handle shipment click to open drawer
+  const handleShipmentClick = (shipment) => {
+    setSelectedShipment(shipment)
+    setIsDetailOpen(true)
+  }
+
+  // Handle recheck compliance for selected shipment
+  const handleRecheckComplianceForShipment = async () => {
+    if (!selectedShipment) return
+    
+    setIsDebugLoading('recheck-compliance')
+    try {
+      const response = await fetch(`${API_BASE}/ai-events/recheck-compliance`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        console.log(`✅ Rechecked compliance for ${data.updated} shipments`)
+        // Refetch to update UI
+        await fetchData()
+        // Update selected shipment in drawer
+        const updatedShipment = shipments.find(s => s.id === selectedShipment.id || s.containerNo === selectedShipment.containerNo)
+        if (updatedShipment) {
+          setSelectedShipment(updatedShipment)
+        }
+      } else {
+        console.error('Recheck compliance failed:', await response.text())
+      }
+    } catch (error) {
+      console.error('Error rechecking compliance:', error)
+    } finally {
+      setIsDebugLoading(null)
+    }
+  }
+
+  // Handle advance phase for selected shipment (debug)
+  const handleAdvancePhaseForShipment = async () => {
+    if (!selectedShipment) return
+    
+    const currentPhase = selectedShipment.currentPhase
+    let endpoint = null
+    
+    if (currentPhase === 'compliance') {
+      endpoint = `${API_BASE}/debug/phase/compliance-done`
+    } else if (currentPhase === 'monitoring') {
+      endpoint = `${API_BASE}/debug/phase/arrival-release`
+    } else if (currentPhase === 'arrival') {
+      endpoint = `${API_BASE}/debug/phase/billing-processed`
+    }
+    
+    if (!endpoint) {
+      console.log('No debug endpoint for current phase:', currentPhase)
+      return
+    }
+    
+    setIsDebugLoading('advance-phase')
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        console.log(`✅ Advanced phase for ${data.updated} shipments`)
+        // Refetch to update UI
+        await fetchData()
+        // Update selected shipment in drawer
+        const updatedShipment = shipments.find(s => s.id === selectedShipment.id || s.containerNo === selectedShipment.containerNo)
+        if (updatedShipment) {
+          setSelectedShipment(updatedShipment)
+        }
+      } else {
+        console.error('Advance phase failed:', await response.text())
+      }
+    } catch (error) {
+      console.error('Error advancing phase:', error)
+    } finally {
+      setIsDebugLoading(null)
+    }
+  }
+
   if (isLoading && employees.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -1646,11 +2576,40 @@ export default function ManageAgents() {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12 relative">
-      {/* Page Header */}
-      <div className="mb-12">
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-white mb-2">AI Control Room</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 uppercase tracking-wide">Your autonomous freight forwarding workforce</p>
+    <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12 relative bg-gradient-to-br from-gray-50 via-white to-blue-50/30 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950 min-h-screen">
+      {/* Page Header - Enhanced */}
+      <div className="mb-12 pt-8">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="relative">
+                <div className="absolute inset-0 bg-primary/20 blur-xl rounded-full"></div>
+                <div className="relative w-12 h-12 bg-gradient-to-br from-primary to-primary-dark rounded-xl flex items-center justify-center shadow-lg">
+                  <Bot className="w-6 h-6 text-white" />
+                </div>
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 dark:from-white dark:via-gray-100 dark:to-white bg-clip-text text-transparent mb-1">
+                  AI Control Room
+                </h1>
+                <p className="text-sm text-gray-600 dark:text-gray-400 font-medium">Autonomous Freight Forwarding Workforce</p>
+                <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                  Ops AI currently managing {shipments.length} live shipment{shipments.length !== 1 ? 's' : ''} across {new Set(shipments.map(s => s.currentPhase)).size} phase{new Set(shipments.map(s => s.currentPhase)).size !== 1 ? 's' : ''}.
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+              <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+              <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">{employees.length} Active Agents</span>
+            </div>
+            <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+              <Activity className="w-4 h-4 text-primary" />
+              <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">{shipments.length} Shipments</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Main Content Grid - Optimized Layout */}
@@ -1662,14 +2621,34 @@ export default function ManageAgents() {
             employees={employees}
             onPhaseSelect={setSelectedPhase}
             selectedPhase={selectedPhase}
+            actions={actions}
           />
           
-          {/* Debug Actions */}
-          <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
-            <div className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3 flex items-center gap-2">
-              <span>Debug Actions</span>
-              <span className="text-[10px] bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 px-2 py-0.5 rounded">Testing Only</span>
-            </div>
+          {/* Debug Actions - Enhanced */}
+          <div className="relative bg-gradient-to-br from-gray-50 via-white to-gray-50 dark:from-gray-800 dark:via-gray-900 dark:to-gray-800 rounded-2xl p-6 border-2 border-gray-200 dark:border-gray-700 shadow-lg overflow-hidden">
+            {/* Decorative elements */}
+            <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-500/5 rounded-full blur-3xl"></div>
+            <div className="absolute bottom-0 left-0 w-24 h-24 bg-blue-500/5 rounded-full blur-2xl"></div>
+            
+            <div className="relative">
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-yellow-400 to-amber-500 flex items-center justify-center shadow-lg">
+                    <Settings className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Debug Actions</h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Development tools</p>
+                  </div>
+                </div>
+                <motion.span
+                  animate={{ scale: [1, 1.05, 1] }}
+                  transition={{ duration: 2, repeat: Infinity }}
+                  className="px-3 py-1.5 bg-gradient-to-r from-yellow-400 to-amber-500 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider shadow-md"
+                >
+                  Testing Only
+                </motion.span>
+              </div>
             
             {/* Phase 1 & 3 - Existing Features */}
             {employees.length > 0 && (
@@ -1754,6 +2733,7 @@ export default function ManageAgents() {
                 </button>
               </div>
             </div>
+            </div>
           </div>
         </div>
 
@@ -1772,23 +2752,33 @@ export default function ManageAgents() {
               </button>
             )}
             
-            {/* Compact Network Performance Chart */}
+            {/* Compact Network Performance Chart - Enhanced */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5 }}
-              className="bg-gradient-to-br from-blue-50 to-white dark:from-gray-800 dark:to-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_0_rgba(0,0,0,0.06)] p-4 hover:scale-[1.01] transition-all duration-200"
+              className="relative bg-gradient-to-br from-blue-50 via-white to-indigo-50/50 dark:from-gray-800 dark:via-gray-900 dark:to-gray-800 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-[0_4px_20px_rgba(0,0,0,0.08)] p-6 hover:shadow-[0_8px_30px_rgba(0,0,0,0.12)] transition-all duration-300 overflow-hidden group"
             >
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Network Performance</h3>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Shipment volume vs cost savings</p>
-        </div>
-                <span className="text-xs text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 px-2 py-1 rounded border border-gray-200 dark:border-gray-700">
-                  6M ▾
-                </span>
-      </div>
-              <ResponsiveContainer width="100%" height={220}>
+              {/* Decorative gradient */}
+              <div className="absolute top-0 right-0 w-40 h-40 bg-blue-500/10 rounded-full blur-3xl group-hover:bg-blue-500/20 transition-colors"></div>
+              
+              <div className="relative">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg">
+                      <BarChart3 className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-gray-900 dark:text-white">Shipment Volume & Cost Savings</h3>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Shipment volume vs cost savings</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+                    <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">6M</span>
+                    <ChevronDown className="w-3 h-3 text-gray-500 dark:text-gray-400" />
+                  </div>
+                </div>
+                <ResponsiveContainer width="100%" height={220}>
                 <ComposedChart data={shipmentVolumeData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" className="dark:stroke-gray-700" />
                   <XAxis 
@@ -1832,48 +2822,94 @@ export default function ManageAgents() {
                   />
                 </ComposedChart>
               </ResponsiveContainer>
+              </div>
             </motion.div>
 
-            {/* Compact Employee Ranking */}
-            <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_0_rgba(0,0,0,0.06)] p-4">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">AI Employee Ranking</h3>
-              <div className="space-y-3">
-                {[...employees].sort((a, b) => (b.tasksCompleted || 0) - (a.tasksCompleted || 0)).map((employee, idx) => {
-                  const maxTasks = Math.max(...employees.map(e => e.tasksCompleted || 0), 1)
-                  const percentage = ((employee.tasksCompleted || 0) / maxTasks) * 100
-                  return (
-                    <div key={employee.id} className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <div className="flex-shrink-0 w-6 h-6 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-xs font-semibold text-gray-900 dark:text-white">
-                            {idx + 1}
-          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-semibold text-gray-900 dark:text-white truncate">{employee.name}</div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{employee.role}</div>
+            {/* Compact Employee Ranking - Hidden for YC demo (focus on Ops AI) */}
+            {false && (
+            <div className="relative bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-[0_4px_20px_rgba(0,0,0,0.08)] p-6 overflow-hidden group">
+              <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+              
+              <div className="relative">
+                <div className="flex items-center gap-3 mb-5">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center shadow-lg">
+                    <TrendingUp className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">Legacy Agents</h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Performance leaderboard</p>
+                  </div>
+                </div>
+                
+                <div className="space-y-4">
+                  {[...employees].sort((a, b) => (b.tasksCompleted || 0) - (a.tasksCompleted || 0)).map((employee, idx) => {
+                    const maxTasks = Math.max(...employees.map(e => e.tasksCompleted || 0), 1)
+                    const percentage = ((employee.tasksCompleted || 0) / maxTasks) * 100
+                    const isTop = idx === 0
+                    const agentAccent = getAgentAccent(employee.name)
+                    
+                    return (
+                      <motion.div 
+                        key={employee.id} 
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: idx * 0.1 }}
+                        className={`relative space-y-2 p-3 rounded-xl transition-all duration-300 ${
+                          isTop 
+                            ? 'bg-gradient-to-r from-primary/10 to-primary/5 dark:from-primary/20 dark:to-primary/10 border-2 border-primary/30' 
+                            : 'bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-700'
+                        }`}
+                      >
+                        {isTop && (
+                          <div className="absolute -top-2 -right-2 w-6 h-6 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-full flex items-center justify-center shadow-lg">
+                            <span className="text-[10px] font-bold text-white">1</span>
+                          </div>
+                        )}
+                        
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold ${
+                              isTop 
+                                ? 'bg-gradient-to-br from-primary to-primary-dark text-white shadow-lg' 
+                                : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                            }`}>
+                              {idx + 1}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <div className="text-sm font-bold text-gray-900 dark:text-white truncate">{employee.name}</div>
+                                {isTop && <Sparkles className="w-3 h-3 text-primary" />}
+                              </div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{employee.role}</div>
+                            </div>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <div className="text-sm font-bold text-gray-900 dark:text-white">{employee.tasksCompleted}</div>
+                            <div className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold">{employee.successRate}%</div>
                           </div>
                         </div>
-                        <div className="text-right flex-shrink-0">
-                          <div className="text-sm font-semibold text-gray-900 dark:text-white">{employee.tasksCompleted} tasks</div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400">{employee.successRate}%</div>
+                        <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                          <motion.div
+                            initial={{ width: 0 }}
+                            animate={{ width: `${percentage}%` }}
+                            transition={{ duration: 0.8, delay: idx * 0.15 }}
+                            className={`h-full rounded-full ${
+                              isTop 
+                                ? 'bg-gradient-to-r from-primary via-primary-dark to-primary' 
+                                : 'bg-gradient-to-r from-gray-400 to-gray-500'
+                            }`}
+                          />
                         </div>
-                      </div>
-                      <div className="w-full h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${percentage}%` }}
-                          transition={{ duration: 0.6, delay: idx * 0.1 }}
-                          className="h-full bg-gradient-to-r from-primary to-primary-dark rounded-full"
-                        />
-                      </div>
-                    </div>
-                  )
-                })}
+                      </motion.div>
+                    )
+                  })}
+                </div>
               </div>
             </div>
+            )}
           </div>
         </div>
-        </div>
+      </div>
 
       {/* Shipments Table - Full Width */}
       <div className="mt-16">
@@ -1881,8 +2917,48 @@ export default function ManageAgents() {
           shipments={shipments} 
           previousShipmentIds={previousShipmentIds}
           selectedPhase={selectedPhase}
+          onShipmentClick={handleShipmentClick}
         />
       </div>
+
+      {/* Shipment Detail Drawer */}
+      {isDetailOpen && selectedShipment && (
+        <ShipmentDetailDrawer
+          shipment={selectedShipment}
+          actions={actions}
+          onClose={() => {
+            setIsDetailOpen(false)
+            setSelectedShipment(null)
+          }}
+          onRecheckCompliance={handleRecheckComplianceForShipment}
+          onAdvancePhaseDebug={handleAdvancePhaseForShipment}
+        />
+      )}
+
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: -50, x: '-50%' }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg shadow-lg px-4 py-3 flex items-center gap-3 min-w-[300px]"
+          >
+            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+              <Mail className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div className="flex-1 text-sm font-medium text-gray-900 dark:text-white">
+              {toast.message}
+            </div>
+            <button
+              onClick={() => setToast(null)}
+              className="flex-shrink-0 p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+            >
+              <X className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Footer */}
       <footer className="mt-16 py-8 border-t border-gray-200 dark:border-gray-800">

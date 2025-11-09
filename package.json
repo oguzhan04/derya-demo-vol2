@@ -10,14 +10,20 @@
     "build": "vite build",
     "lint": "eslint .",
     "lint:edge": "grep -R \"\\:\\s*[A-Z][A-Za-z0-9_<>]*\\s*[=)]\" api/**/*.js && echo 'TS in JS found' && exit 1 || echo 'OK'",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:e2e": "playwright test",
+    "demo:lifecycle": "node scripts/runDemoLifecycle.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "framer-motion": "^12.23.24",
+    "imap-simple": "^5.1.0",
     "jspdf": "^3.0.3",
     "lucide-react": "^0.263.1",
+    "mailparser": "^3.9.0",
     "multer": "^2.0.2",
     "openai": "^6.8.1",
     "pdf-parse": "^2.2.2",
@@ -28,6 +34,8 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@jest/globals": "^30.2.0",
+    "@playwright/test": "^1.56.1",
     "@types/react": "^18.2.15",
     "@types/react-dom": "^18.2.7",
     "@vitejs/plugin-react": "^4.0.3",
@@ -37,7 +45,9 @@
     "eslint-plugin-react": "^7.32.2",
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.3",
+    "jest": "^30.2.0",
     "postcss": "^8.4.27",
+    "supertest": "^7.1.4",
     "tailwindcss": "^3.3.3",
     "typescript": "^5.2.2",
     "vite": "^4.4.5"
