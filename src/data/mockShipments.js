@@ -1,5 +1,104 @@
 // Mock shipment data for demo/development
-export const mockShipments = [
+import { SHIPMENT_PHASES, PHASE_STATUS } from '../types/Phases.js'
+
+// Helper to generate phase data based on shipment state
+const generatePhaseData = (shipment, index) => {
+  const hasArrivalDate = !!shipment.arrivalDate
+  const hasDepartDate = !!shipment.departDate
+  const now = new Date()
+  const departDate = shipment.departDate ? new Date(shipment.departDate) : null
+  const arrivalDate = shipment.arrivalDate ? new Date(shipment.arrivalDate) : null
+  
+  // Distribute shipments across phases for visual interest
+  const phaseIndex = index % 5
+  const phases = [
+    SHIPMENT_PHASES.INTAKE,
+    SHIPMENT_PHASES.COMPLIANCE,
+    SHIPMENT_PHASES.MONITORING,
+    SHIPMENT_PHASES.ARRIVAL,
+    SHIPMENT_PHASES.BILLING,
+  ]
+  
+  let currentPhase = phases[phaseIndex]
+  let phaseProgress = {
+    intake: PHASE_STATUS.DONE,
+    compliance: PHASE_STATUS.DONE,
+    monitoring: PHASE_STATUS.DONE,
+    arrival: PHASE_STATUS.DONE,
+    billing: PHASE_STATUS.DONE,
+  }
+  
+  // Set current phase and progress based on shipment state
+  if (!hasDepartDate) {
+    // New shipment - in intake
+    currentPhase = SHIPMENT_PHASES.INTAKE
+    phaseProgress = {
+      intake: PHASE_STATUS.IN_PROGRESS,
+      compliance: PHASE_STATUS.PENDING,
+      monitoring: PHASE_STATUS.PENDING,
+      arrival: PHASE_STATUS.PENDING,
+      billing: PHASE_STATUS.PENDING,
+    }
+  } else if (hasArrivalDate && arrivalDate < now) {
+    // Arrived - could be in arrival or billing
+    if (phaseIndex >= 3) {
+      currentPhase = SHIPMENT_PHASES.BILLING
+      phaseProgress = {
+        intake: PHASE_STATUS.DONE,
+        compliance: PHASE_STATUS.DONE,
+        monitoring: PHASE_STATUS.DONE,
+        arrival: PHASE_STATUS.DONE,
+        billing: phaseIndex === 4 ? PHASE_STATUS.IN_PROGRESS : PHASE_STATUS.DONE,
+      }
+    } else {
+      currentPhase = SHIPMENT_PHASES.ARRIVAL
+      phaseProgress = {
+        intake: PHASE_STATUS.DONE,
+        compliance: PHASE_STATUS.DONE,
+        monitoring: PHASE_STATUS.DONE,
+        arrival: PHASE_STATUS.IN_PROGRESS,
+        billing: PHASE_STATUS.PENDING,
+      }
+    }
+  } else if (hasDepartDate && departDate < now) {
+    // Departed but not arrived - in monitoring
+    currentPhase = SHIPMENT_PHASES.MONITORING
+    phaseProgress = {
+      intake: PHASE_STATUS.DONE,
+      compliance: PHASE_STATUS.DONE,
+      monitoring: PHASE_STATUS.IN_PROGRESS,
+      arrival: PHASE_STATUS.PENDING,
+      billing: PHASE_STATUS.PENDING,
+    }
+  } else if (phaseIndex === 1) {
+    // Some in compliance
+    currentPhase = SHIPMENT_PHASES.COMPLIANCE
+    phaseProgress = {
+      intake: PHASE_STATUS.DONE,
+      compliance: PHASE_STATUS.IN_PROGRESS,
+      monitoring: PHASE_STATUS.PENDING,
+      arrival: PHASE_STATUS.PENDING,
+      billing: PHASE_STATUS.PENDING,
+    }
+  } else {
+    // Use the distributed phase - ensure all keys are present
+    const phaseOrder = [SHIPMENT_PHASES.INTAKE, SHIPMENT_PHASES.COMPLIANCE, SHIPMENT_PHASES.MONITORING, SHIPMENT_PHASES.ARRIVAL, SHIPMENT_PHASES.BILLING]
+    const currentPhaseIndex = phaseOrder.indexOf(currentPhase)
+    // Initialize with all phases
+    phaseProgress = {
+      [SHIPMENT_PHASES.INTAKE]: currentPhaseIndex > 0 ? PHASE_STATUS.DONE : (currentPhaseIndex === 0 ? PHASE_STATUS.IN_PROGRESS : PHASE_STATUS.PENDING),
+      [SHIPMENT_PHASES.COMPLIANCE]: currentPhaseIndex > 1 ? PHASE_STATUS.DONE : (currentPhaseIndex === 1 ? PHASE_STATUS.IN_PROGRESS : PHASE_STATUS.PENDING),
+      [SHIPMENT_PHASES.MONITORING]: currentPhaseIndex > 2 ? PHASE_STATUS.DONE : (currentPhaseIndex === 2 ? PHASE_STATUS.IN_PROGRESS : PHASE_STATUS.PENDING),
+      [SHIPMENT_PHASES.ARRIVAL]: currentPhaseIndex > 3 ? PHASE_STATUS.DONE : (currentPhaseIndex === 3 ? PHASE_STATUS.IN_PROGRESS : PHASE_STATUS.PENDING),
+      [SHIPMENT_PHASES.BILLING]: currentPhaseIndex > 4 ? PHASE_STATUS.DONE : (currentPhaseIndex === 4 ? PHASE_STATUS.IN_PROGRESS : PHASE_STATUS.PENDING),
+    }
+  }
+  
+  return { currentPhase, phaseProgress }
+}
+
+// Base shipment data
+const baseShipments = [
   // Carrier underperformance examples - ACME Logistics
   {
     id: 'SH-A001',
@@ -542,4 +641,14 @@ export const mockShipments = [
     riskLevel: 'Low',
     commodity: 'Documents',
   },
-];
+]
+
+// Add phase data to all shipments
+export const mockShipments = baseShipments.map((shipment, index) => {
+  const { currentPhase, phaseProgress } = generatePhaseData(shipment, index)
+  return {
+    ...shipment,
+    currentPhase,
+    phaseProgress,
+  }
+})

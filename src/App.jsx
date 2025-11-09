@@ -1,13 +1,12 @@
 import { useState } from 'react'
-import { Network, Users, Database, LayoutDashboard, Bot, Settings, Wrench } from 'lucide-react'
+import { Network, Database, LayoutDashboard, Settings, Wrench } from 'lucide-react'
 import DataSources from './features/documents/DataSources'
 import ViewData from './features/documents/ViewData'
-import CXPage from './cx/CXPage'
 import Dashboard from './features/dashboard/Dashboard'
-import ChatGPTTest from './features/integrations/ChatGPTTest'
 import ManageAgents from './features/agents/ManageAgents'
 import AgentBuilder from './features/agents/AgentBuilder'
-import { mockShipments } from './data/mockShipments'
+import Navbar from './components/Navbar'
+import { mockShipments } from './data/mockShipments.js'
 
 export default function App() {
   const [active, setActive] = useState('dashboard')
@@ -15,18 +14,18 @@ export default function App() {
   const [isHovered, setIsHovered] = useState(false)
 
   return (
-    <div className="flex">
+    <div className="flex min-h-screen bg-[#F8FAFC] dark:bg-[#0B1120] transition-colors duration-300">
       {/* Sidebar */}
       <div 
-        className={`${isHovered ? 'w-64' : 'w-[72px]'} bg-white border-r border-gray-200 transition-all duration-300 h-screen fixed left-0 top-0 z-50`}
+        className={`${isHovered ? 'w-64' : 'w-[72px]'} bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 transition-all duration-300 h-screen fixed left-0 top-0 z-50`}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
         <div className="p-4">
           {/* Logo */}
-          <div className="text-gray-800 text-sm font-bold mb-8 flex items-center justify-center gap-2">
+          <div className="text-gray-800 dark:text-white text-sm font-bold mb-8 flex items-center justify-center gap-2">
             <div className="text-lg">FF</div>
-            <span className={`overflow-hidden transition-all duration-300 whitespace-nowrap text-xs text-gray-600 ${isHovered ? 'opacity-100' : 'opacity-0 w-0'}`}>
+            <span className={`overflow-hidden transition-all duration-300 whitespace-nowrap text-xs text-gray-600 dark:text-gray-400 ${isHovered ? 'opacity-100' : 'opacity-0 w-0'}`}>
               Derya Maritime
             </span>
           </div>
@@ -35,7 +34,7 @@ export default function App() {
           <div className="space-y-6">
             {/* ANALYTICS Section */}
             <div>
-              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 px-3">
+              <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3 px-3">
                 <span className={`overflow-hidden transition-all duration-300 whitespace-nowrap ${isHovered ? 'opacity-100' : 'opacity-0 w-0'}`}>
                   Analytics
                 </span>
@@ -44,7 +43,7 @@ export default function App() {
                 <button 
                   onClick={() => setActive('dashboard')}
                   className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all duration-200 ${
-                    active === 'dashboard' ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-100'
+                    active === 'dashboard' ? 'bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
                   }`}
                 >
                   <LayoutDashboard size={20} className="flex-shrink-0" />
@@ -53,16 +52,15 @@ export default function App() {
                   </span>
                 </button>
 
-
                 <button 
-                  onClick={() => setActive('customer-experience')}
+                  onClick={() => setActive('manage-employees')}
                   className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all duration-200 ${
-                    active === 'customer-experience' ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-100'
+                    active === 'manage-employees' ? 'bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
                   }`}
                 >
-                  <Users size={20} className="flex-shrink-0" />
+                  <Settings size={20} className="flex-shrink-0" />
                   <span className={`overflow-hidden transition-all duration-300 whitespace-nowrap ${isHovered ? 'opacity-100' : 'opacity-0 w-0'}`}>
-                    Customer Experience
+                    Manage Employees
                   </span>
                 </button>
 
@@ -71,7 +69,7 @@ export default function App() {
 
             {/* DATA Section */}
             <div>
-              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 px-3">
+              <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3 px-3">
                 <span className={`overflow-hidden transition-all duration-300 whitespace-nowrap ${isHovered ? 'opacity-100' : 'opacity-0 w-0'}`}>
                   Data
                 </span>
@@ -80,7 +78,7 @@ export default function App() {
                 <button 
                   onClick={() => setActive('data-explorer')}
                   className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all duration-200 ${
-                    active === 'data-explorer' ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-100'
+                    active === 'data-explorer' ? 'bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
                   }`}
                 >
                   <Database size={20} className="flex-shrink-0" />
@@ -92,7 +90,7 @@ export default function App() {
                 <button 
                   onClick={() => setActive('data-integration')}
                   className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all duration-200 ${
-                    active === 'data-integration' ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-100'
+                    active === 'data-integration' ? 'bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
                   }`}
                 >
                   <Network size={20} className="flex-shrink-0" />
@@ -101,34 +99,11 @@ export default function App() {
                   </span>
                 </button>
 
-                <button 
-                  onClick={() => setActive('chatgpt-test')}
-                  className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all duration-200 ${
-                    active === 'chatgpt-test' ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  <Bot size={20} className="flex-shrink-0" />
-                  <span className={`overflow-hidden transition-all duration-300 whitespace-nowrap ${isHovered ? 'opacity-100' : 'opacity-0 w-0'}`}>
-                    ChatGPT Test
-                  </span>
-                </button>
-
-                <button 
-                  onClick={() => setActive('manage-agents')}
-                  className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all duration-200 ${
-                    active === 'manage-agents' ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  <Settings size={20} className="flex-shrink-0" />
-                  <span className={`overflow-hidden transition-all duration-300 whitespace-nowrap ${isHovered ? 'opacity-100' : 'opacity-0 w-0'}`}>
-                    Manage Agents
-                  </span>
-                </button>
 
                 <button 
                   onClick={() => setActive('agent-builder')}
                   className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all duration-200 ${
-                    active === 'agent-builder' ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-100'
+                    active === 'agent-builder' ? 'bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
                   }`}
                 >
                   <Wrench size={20} className="flex-shrink-0" />
@@ -142,22 +117,19 @@ export default function App() {
           </div>
 
           {/* Footer */}
-          <div className="absolute bottom-4 text-xs text-gray-500">
+          <div className="absolute bottom-4 text-xs text-gray-500 dark:text-gray-400">
             v0.1
           </div>
         </div>
       </div>
 
       {/* Content */}
-      <div className="flex-1 ml-[72px] bg-gray-50 min-h-screen">
-        {active === 'customer-experience' ? (
-          <CXPage />
-        ) : active === 'chatgpt-test' ? (
-          <div className="p-8 max-w-6xl mx-auto">
-            <ChatGPTTest />
-          </div>
-        ) : active === 'manage-agents' ? (
-          <div className="p-8 max-w-6xl mx-auto">
+      <div className="flex-1 ml-[72px] bg-[#F9FAFB] dark:bg-[#0B1120] min-h-screen transition-colors duration-300">
+        {/* Navbar */}
+        <Navbar />
+        
+        {active === 'manage-employees' ? (
+          <div className="py-6">
             <ManageAgents />
           </div>
         ) : active === 'agent-builder' ? (
