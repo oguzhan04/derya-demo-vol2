@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { useMetrics } from '../../hooks/useMetrics.js'
 import { 
   FileText,
   Navigation2,
@@ -6,6 +7,7 @@ import {
   Clock, 
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   BarChart3,
   Zap,
   Play,
@@ -32,12 +34,18 @@ import {
   Send,
   Info,
   Mail,
-  MailCheck
+  MailCheck,
+  Target,
+  Shield,
+  TrendingDown,
+  AlertTriangle
 } from 'lucide-react'
 import { PHASES_CONFIG, SHIPMENT_PHASES, getPhaseLabel, getStatusLabel, getStatusColor } from '../../types/Phases.js'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, ComposedChart } from 'recharts'
 import { motion, AnimatePresence } from 'framer-motion'
 import CountUp from 'react-countup'
+// import ShipmentTable from '../../components/ShipmentTable'
+// import ShipmentDrawer from '../../components/ShipmentDrawer'
 
 const API_BASE = '/api'
 
@@ -94,38 +102,287 @@ const getAgentAccent = (name) => {
 }
 
 // ============================================================================
+// Toast Notification System
+// ============================================================================
+
+function Toast({ message, type = 'info', onClose }) {
+  const icons = {
+    info: Mail,
+    success: CheckCircle,
+    warning: AlertTriangle,
+    error: AlertCircle
+  }
+  const colors = {
+    info: 'bg-blue-500',
+    success: 'bg-emerald-500',
+    warning: 'bg-yellow-500',
+    error: 'bg-red-500'
+  }
+  const Icon = icons[type] || icons.info
+
+  return (
+    <div className={`${colors[type]} text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 min-w-[300px] max-w-[400px]`}>
+      <Icon className="w-5 h-5 flex-shrink-0" />
+      <span className="flex-1 text-sm font-medium">{message}</span>
+      <button onClick={onClose} className="hover:opacity-80">
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  )
+}
+
+// ============================================================================
+// Active Task Strip Component
+// ============================================================================
+
+function ActiveTaskStrip({ employees, shipments }) {
+  // Find active tasks from employees
+  const activeTasks = employees
+    .filter(e => e.currentTask && e.currentTask !== 'Idle')
+    .map(e => ({
+      agent: e.name,
+      task: e.currentTask,
+      count: e.workQueue || 0
+    }))
+
+  if (activeTasks.length === 0) {
+    return null
+  }
+
+  const primaryTask = activeTasks[0]
+  const taskCount = activeTasks.reduce((sum, t) => sum + t.count, 0)
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="mb-6 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent dark:from-primary/20 dark:via-primary/10 border border-primary/20 dark:border-primary/30 rounded-xl p-4"
+    >
+      <div className="flex items-center gap-3">
+        <motion.div
+          animate={{ scale: [1, 1.1, 1] }}
+          transition={{ duration: 2, repeat: Infinity }}
+          className="w-2 h-2 bg-primary rounded-full"
+        />
+        <span className="text-sm font-semibold text-gray-900 dark:text-white">
+          🧠 {primaryTask.agent} is {primaryTask.task.toLowerCase()}
+          {taskCount > 0 && ` for ${taskCount} shipment${taskCount !== 1 ? 's' : ''}...`}
+        </span>
+      </div>
+    </motion.div>
+  )
+}
+
+// ============================================================================
+// Agent Avatars Component
+// ============================================================================
+
+function AgentAvatars({ employees }) {
+  const getAgentIcon = (name) => {
+    if (name.includes('FreightBot') || name.includes('Alpha')) return '🤖'
+    if (name.includes('RouteMaster') || name.includes('Pro')) return '🧭'
+    return '🤖'
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      {employees.map((emp, idx) => (
+        <motion.div
+          key={emp.id}
+          initial={{ opacity: 0, scale: 0 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: idx * 0.1 }}
+          className="relative group"
+          title={emp.name}
+        >
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary/20 to-primary/10 dark:from-primary/30 dark:to-primary/20 border-2 border-primary/30 flex items-center justify-center text-sm cursor-pointer hover:scale-110 transition-transform">
+            {getAgentIcon(emp.name)}
+          </div>
+          {emp.currentTask && emp.currentTask !== 'Idle' && (
+            <motion.div
+              animate={{ scale: [1, 1.2, 1] }}
+              transition={{ duration: 1.5, repeat: Infinity }}
+              className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white dark:border-gray-900"
+            />
+          )}
+        </motion.div>
+      ))}
+    </div>
+  )
+}
+
+// ============================================================================
+// Mission Log Component (replacing Recent AI Actions)
+// ============================================================================
+
+function MissionLog({ actions, previousActionIds }) {
+  // Transform actions into verb-based mission entries
+  const transformActionToMission = (action) => {
+    const message = action.message || ''
+    let verb = 'Processed'
+    let object = message
+
+    if (message.includes('parsed') || message.includes('extracted')) {
+      verb = 'Parsed'
+      object = message.replace(/.*?(parsed|extracted)/i, '').trim() || 'document'
+    } else if (message.includes('updated') || message.includes('adjusted')) {
+      verb = 'Updated'
+      object = message.replace(/.*?(updated|adjusted)/i, '').trim() || 'data'
+    } else if (message.includes('cleared') || message.includes('verified')) {
+      verb = 'Cleared'
+      object = message.replace(/.*?(cleared|verified)/i, '').trim() || 'compliance'
+    } else if (message.includes('detected') || message.includes('identified')) {
+      verb = 'Detected'
+      object = message.replace(/.*?(detected|identified)/i, '').trim() || 'issue'
+    } else if (message.includes('informed') || message.includes('notified')) {
+      verb = 'Informed'
+      object = message.replace(/.*?(informed|notified)/i, '').trim() || 'stakeholder'
+    } else if (message.includes('recomputed') || message.includes('recalculated')) {
+      verb = 'Recomputed'
+      object = message.replace(/.*?(recomputed|recalculated)/i, '').trim() || 'ETA'
+    }
+
+    return { verb, object, full: `${verb} → ${object}` }
+  }
+
+  return (
+    <div className="mt-8 pt-8 border-t border-gray-200 dark:border-gray-800">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <div className="absolute inset-0 bg-primary/20 blur-xl rounded-lg"></div>
+            <div className="relative w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center">
+              <Target className="w-5 h-5 text-white" />
+            </div>
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white" data-mission-log>Mission Log</h3>
+            <p className="text-xs text-gray-400 dark:text-gray-600 font-light">Autonomous decision timeline</p>
+          </div>
+          <motion.div
+            animate={{ 
+              scale: [1, 1.2, 1],
+              opacity: [1, 0.7, 1]
+            }}
+            transition={{ duration: 2, repeat: Infinity }}
+            className="w-2.5 h-2.5 bg-emerald-500 rounded-full ml-2 shadow-lg shadow-emerald-500/50"
+          />
+        </div>
+      </div>
+      <div className="space-y-0 max-h-96 overflow-y-auto">
+        {(() => {
+          // Only show actions from email processing
+          const emailActions = actions.filter(a => 
+            a.message && (
+              a.message.includes('from email') || 
+              a.message.includes('email') ||
+              a.emailSource === true ||
+              (a.phase === 'intake' && a.message.toLowerCase().includes('parsed'))
+            )
+          )
+          
+          if (emailActions.length === 0) {
+            return <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">N/A - No email processing actions yet</div>
+          }
+          
+          return (
+            <AnimatePresence mode="popLayout">
+              {emailActions.slice(0, 10).map((action, index) => {
+              const isNew = previousActionIds && !previousActionIds.has(action.id)
+              const mission = transformActionToMission(action)
+              return (
+                <motion.div
+                  key={action.id}
+                  variants={actionItemVariants}
+                  initial={isNew ? "initial" : false}
+                  animate="animate"
+                  exit="exit"
+                  transition={{ duration: 0.5, delay: isNew ? index * 0.05 : 0 }}
+                  className={`flex gap-3 text-sm py-3 px-2 rounded-lg border-l-2 ${
+                    action.agent?.includes('FreightBot') || action.agent?.includes('Alpha') 
+                      ? 'border-l-blue-500' 
+                      : action.agent?.includes('RouteMaster') || action.agent?.includes('Pro')
+                      ? 'border-l-amber-500'
+                      : 'border-l-gray-300 dark:border-l-gray-700'
+                  } ${index % 2 === 0 ? 'bg-white dark:bg-gray-900' : 'bg-gray-50 dark:bg-gray-800'}`}
+                >
+                  <span className="text-gray-500 dark:text-gray-400 font-mono text-xs flex-shrink-0 w-16 text-right">
+                    {(() => {
+                      if (!action.createdAt) return action.time || '—'
+                      const date = new Date(action.createdAt)
+                      const now = new Date()
+                      const diffMs = now - date
+                      const diffMins = Math.floor(diffMs / 60000)
+                      const diffHours = Math.floor(diffMs / 3600000)
+                      if (diffMins < 1) return 'now'
+                      if (diffMins < 60) return `${diffMins}m`
+                      if (diffHours < 24) return `${diffHours}h`
+                      return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+                    })()}
+                  </span>
+                  <div className="flex-1 flex items-center gap-2">
+                    {action.phase && (
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                        PHASES_CONFIG.find(p => p.id === action.phase)?.bgColor || 'bg-slate-100 dark:bg-slate-800'
+                      } ${
+                        PHASES_CONFIG.find(p => p.id === action.phase)?.textColor || 'text-slate-600 dark:text-slate-400'
+                      }`}>
+                        {getPhaseLabel(action.phase)}
+                      </span>
+                    )}
+                    <span className="font-semibold text-gray-900 dark:text-white">{mission.verb}</span>
+                    <span className="text-gray-700 dark:text-gray-300">{mission.object}</span>
+                    {action.agent && (
+                      <span className="text-xs text-gray-500 dark:text-gray-400 ml-auto">— {action.agent}</span>
+                    )}
+                  </div>
+                </motion.div>
+              )
+            })}
+          </AnimatePresence>
+          )
+        })()}
+      </div>
+    </div>
+  )
+}
+
+// ============================================================================
 // Components
 // ============================================================================
 
-// Mock data generators for new features
-const generateInsights = (employee) => {
-  if (employee.id === 'AI-EMP-001') {
-    return [
-      { icon: '🔍', text: 'Detected duplicate arrival notices — skipped 4 documents.' },
-      { icon: '⚡', text: 'Achieved 99.1% OCR accuracy this week.' },
-      { icon: '🧠', text: 'Suggests consolidating Hamburg & Bremen routes for 12% efficiency gain.' }
-    ]
+// Get insights from employee data or return empty
+const getInsights = (employee) => {
+  if (employee.insights && Array.isArray(employee.insights) && employee.insights.length > 0) {
+    return employee.insights
   }
-  return [
-    { icon: '🚀', text: 'Optimized 15 routes based on real-time port congestion data.' },
-    { icon: '📊', text: 'ETA accuracy improved to 96.4% over last 7 days.' },
-    { icon: '💡', text: 'Identified 3 high-priority shipments requiring immediate attention.' }
-  ]
+  return []
 }
 
-const generateReasoning = (employee) => {
-  if (employee.id === 'AI-EMP-001') {
-    return [
-      'Extracted carrier name from PDF header → matched vessel database → validated ETA against port schedule.',
-      'Parsed container number using OCR → cross-referenced with shipping manifest → confirmed customs status.',
-      'Detected duplicate document signature → skipped processing → logged for operator review.'
-    ]
+// Get reasoning from employee data or return empty
+const getReasoning = (employee) => {
+  if (employee.reasoning && Array.isArray(employee.reasoning) && employee.reasoning.length > 0) {
+    return employee.reasoning
   }
-  return [
-    'Analyzed port congestion API → calculated delay impact → updated 15 ETAs with 96% confidence.',
-    'Cross-referenced weather data → adjusted route timing → optimized for fuel efficiency.',
-    'Detected pattern in carrier delays → applied predictive adjustment → improved accuracy by 2.3%.'
-  ]
+  return []
+}
+
+// Helper to format time for timeline
+const formatTimeForTimeline = (timestamp) => {
+  if (!timestamp) return 'N/A'
+  try {
+    const date = new Date(timestamp)
+    const now = new Date()
+    const diffMs = now - date
+    const diffMins = Math.floor(diffMs / 60000)
+    const diffHours = Math.floor(diffMs / 3600000)
+    if (diffMins < 1) return 'Just now'
+    if (diffMins < 60) return `${diffMins}m ago`
+    if (diffHours < 24) return `${diffHours}h ago`
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  } catch {
+    return 'N/A'
+  }
 }
 
 /**
@@ -150,31 +407,37 @@ function EmployeeCard({ employee, onAction, onFileUpload }) {
   const chatInputRef = React.useRef(null)
   const Icon = getRoleIcon(employee.role)
   
-  // Mock metrics
+  // Metrics from employee data or N/A
   const metrics = {
-    avgResponseTime: '3.1s',
-    automationRate: 92,
-    costSavings: 12480,
-    lastSync: '2m ago'
+    avgResponseTime: employee.avgResponseTime || 'N/A',
+    automationRate: employee.automationRate || null,
+    costSavings: employee.costSavings || null,
+    lastSync: employee.lastActivity || 'N/A'
   }
   
-  // Mock task progress
+  // Task progress from employee data or 0
   useEffect(() => {
     if (isLoading || isUploading) {
-      const interval = setInterval(() => {
-        setTaskProgress(prev => {
-          if (prev >= 90) return prev
-          return prev + Math.random() * 15
-        })
-      }, 500)
-      return () => clearInterval(interval)
+      // Use real progress if available, otherwise simulate
+      if (employee.taskProgress !== undefined) {
+        setTaskProgress(employee.taskProgress)
+      } else {
+        // Only simulate if we're actively loading/uploading
+        const interval = setInterval(() => {
+          setTaskProgress(prev => {
+            if (prev >= 90) return prev
+            return prev + 10 // Fixed increment instead of random
+          })
+        }, 500)
+        return () => clearInterval(interval)
+      }
     } else {
-      setTaskProgress(0)
+      setTaskProgress(employee.taskProgress || 0)
     }
-  }, [isLoading, isUploading])
+  }, [isLoading, isUploading, employee.taskProgress])
   
-  const insights = generateInsights(employee)
-  const reasoning = generateReasoning(employee)
+  const insights = getInsights(employee)
+  const reasoning = getReasoning(employee)
   
   // Track previous values for CountUp animation
   const prevValuesRef = useRef({
@@ -492,6 +755,7 @@ function EmployeeCard({ employee, onAction, onFileUpload }) {
                   </button>
                 </>
               )}
+              
               {employee.id === 'AI-EMP-002' && (
                 <>
                   <button
@@ -667,21 +931,27 @@ function EmployeeCard({ employee, onAction, onFileUpload }) {
               animate={{ opacity: 1, height: 'auto' }}
               className="space-y-2"
             >
-              {insights.map((insight, idx) => (
-                <div key={idx} className="text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded-lg p-2">
-                  <span className="mr-2">{insight.icon}</span>
-                  {insight.text}
+              {insights.length > 0 ? (
+                insights.map((insight, idx) => (
+                  <div key={idx} className="text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded-lg p-2">
+                    <span className="mr-2">{insight.icon || '📋'}</span>
+                    {insight.text || insight}
+                  </div>
+                ))
+              ) : (
+                <div className="text-xs text-gray-400 dark:text-gray-600 bg-gray-50 dark:bg-gray-800 rounded-lg p-2">
+                  N/A - No insights available
                 </div>
-              ))}
+              )}
             </motion.div>
           )}
         </div>
         
         {/* Learning Mode Badge */}
-        {employee.id === 'AI-EMP-001' && (
+        {employee.learningStatus && (
           <div className="mb-4 text-xs text-gray-500 dark:text-gray-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg p-2 flex items-center gap-2">
             <span>🧩</span>
-            <span>Learning from 12 new samples to improve extraction accuracy.</span>
+            <span>{employee.learningStatus}</span>
           </div>
         )}
       </div>
@@ -729,14 +999,20 @@ function EmployeeCard({ employee, onAction, onFileUpload }) {
               </button>
             </div>
             <div className="p-6 space-y-4">
-              {reasoning.map((step, idx) => (
-                <div key={idx} className="flex gap-3">
-                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold">
-                    {idx + 1}
+              {reasoning.length > 0 ? (
+                reasoning.map((step, idx) => (
+                  <div key={idx} className="flex gap-3">
+                    <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold">
+                      {idx + 1}
+                    </div>
+                    <p className="text-sm text-gray-700 dark:text-gray-300 flex-1">{step}</p>
                   </div>
-                  <p className="text-sm text-gray-700 dark:text-gray-300 flex-1">{step}</p>
+                ))
+              ) : (
+                <div className="text-sm text-gray-400 dark:text-gray-600 text-center py-4">
+                  N/A - No reasoning data available
                 </div>
-              ))}
+              )}
             </div>
           </motion.div>
               </div>
@@ -761,24 +1037,22 @@ function EmployeeCard({ employee, onAction, onFileUpload }) {
               </button>
             </div>
             <div className="p-6">
-              <ResponsiveContainer width="100%" height={250}>
-                <LineChart data={[
-                  { day: 'Mon', success: 96.2, efficiency: 91.5 },
-                  { day: 'Tue', success: 97.1, efficiency: 93.2 },
-                  { day: 'Wed', success: 98.0, efficiency: 94.8 },
-                  { day: 'Thu', success: 97.5, efficiency: 95.1 },
-                  { day: 'Fri', success: 98.7, efficiency: 96.0 },
-                  { day: 'Sat', success: 98.9, efficiency: 95.5 },
-                  { day: 'Sun', success: 99.1, efficiency: 96.2 }
-                ]}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" className="dark:stroke-gray-700" />
-                  <XAxis dataKey="day" stroke="#6B7280" className="dark:stroke-gray-400" />
-                  <YAxis stroke="#6B7280" className="dark:stroke-gray-400" />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="success" stroke="#16A34A" strokeWidth={2} name="Success Rate %" />
-                  <Line type="monotone" dataKey="efficiency" stroke="#2563EB" strokeWidth={2} name="Efficiency %" />
-                </LineChart>
-              </ResponsiveContainer>
+              {employee.performanceLogs && employee.performanceLogs.length > 0 ? (
+                <ResponsiveContainer width="100%" height={250}>
+                  <LineChart data={employee.performanceLogs}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" className="dark:stroke-gray-700" />
+                    <XAxis dataKey="day" stroke="#6B7280" className="dark:stroke-gray-400" />
+                    <YAxis stroke="#6B7280" className="dark:stroke-gray-400" />
+                    <Tooltip />
+                    <Line type="monotone" dataKey="success" stroke="#16A34A" strokeWidth={2} name="Success Rate %" />
+                    <Line type="monotone" dataKey="efficiency" stroke="#2563EB" strokeWidth={2} name="Efficiency %" />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-[250px] flex items-center justify-center text-gray-400 dark:text-gray-600">
+                  <span>N/A - No performance data available</span>
+                </div>
+              )}
             </div>
           </motion.div>
               </div>
@@ -910,39 +1184,51 @@ function EmployeeCard({ employee, onAction, onFileUpload }) {
                   <div className="text-2xl font-bold text-gray-900 dark:text-white">{employee.tasksCompleted}</div>
                   <div className="text-xs text-gray-500 dark:text-gray-400">Total Actions</div>
                 </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                {employee.avgResponseTime || 'N/A'}
+              </div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">Avg Completion</div>
+            </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-gray-900 dark:text-white">3.1s</div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400">Avg Completion</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-gray-900 dark:text-white">2</div>
+                  <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                    {employee.errorCount !== undefined ? employee.errorCount : 'N/A'}
+                  </div>
                   <div className="text-xs text-gray-500 dark:text-gray-400">Errors</div>
                 </div>
               </div>
               <div>
                 <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Top 3 Recurring Tasks</h4>
                 <div className="space-y-2">
-                  {['Parse arrival notice', 'Extract container data', 'Validate customs info'].map((task, idx) => (
-                    <div key={idx} className="flex items-center justify-between text-sm bg-gray-50 dark:bg-gray-800 rounded-lg p-2">
-                      <span className="text-gray-700 dark:text-gray-300">{task}</span>
-                      <span className="text-gray-500 dark:text-gray-400">{Math.floor(Math.random() * 50) + 20}x</span>
-                    </div>
-                  ))}
+                  {employee.recurringTasks && employee.recurringTasks.length > 0 ? (
+                    employee.recurringTasks.map((task, idx) => (
+                      <div key={idx} className="flex items-center justify-between text-sm bg-gray-50 dark:bg-gray-800 rounded-lg p-2">
+                        <span className="text-gray-700 dark:text-gray-300">{task.name || task}</span>
+                        <span className="text-gray-500 dark:text-gray-400">{task.count || 0}x</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-sm text-gray-400 dark:text-gray-600">N/A - No task data available</div>
+                  )}
                 </div>
               </div>
               <div>
                 <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Recent Timeline</h4>
                 <div className="space-y-2">
-                  {Array.from({ length: 10 }).map((_, idx) => (
-                    <div key={idx} className="flex gap-3 text-sm">
-                      <span className="text-gray-500 dark:text-gray-400 font-mono text-xs w-16">
-                        {new Date(Date.now() - idx * 60000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                      <span className="text-gray-700 dark:text-gray-300 flex-1">
-                        {idx === 0 ? employee.currentTask : `Completed task #${employee.tasksCompleted - idx}`}
-                      </span>
-                    </div>
-                  ))}
+                  {employee.recentTimeline && employee.recentTimeline.length > 0 ? (
+                    employee.recentTimeline.map((item, idx) => (
+                      <div key={idx} className="flex gap-3 text-sm">
+                        <span className="text-gray-500 dark:text-gray-400 font-mono text-xs w-16">
+                          {item.time || item.timestamp ? formatTimeForTimeline(item.timestamp || item.time) : 'N/A'}
+                        </span>
+                        <span className="text-gray-700 dark:text-gray-300 flex-1">
+                          {item.text || item.action || item.message || 'N/A'}
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-sm text-gray-400 dark:text-gray-600">N/A - No timeline data available</div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1006,27 +1292,60 @@ function EmployeeCard({ employee, onAction, onFileUpload }) {
 }
 
 // Ops AI Card Component
-function OpsAICard({ shipments, employees, onPhaseSelect, selectedPhase, actions = [] }) {
-  // Calculate phase counts
+function OpsAICard({ shipments, employees, onPhaseSelect, selectedPhase, actions = [], previousActionIds, processingVelocity = 2.8, errorRecoveryRate = 98, costSaved = 0, isAutonomous = true, setIsAutonomous, realMetrics = null }) {
+  // Calculate phase counts - ONLY from email-processed shipments
+  const emailShipmentsForPhases = shipments.filter(s => s.source === 'email')
   const phaseCounts = PHASES_CONFIG.reduce((acc, phase) => {
-    acc[phase.id] = shipments.filter(s => s.currentPhase === phase.id).length
+    acc[phase.id] = emailShipmentsForPhases.filter(s => s.currentPhase === phase.id).length
     return acc
   }, {})
   
-  // Calculate compliance issues count
-  const complianceIssuesCount = shipments.filter(
+  // Calculate compliance issues count - ONLY from email shipments
+  const complianceIssuesCount = emailShipmentsForPhases.filter(
     s => s.currentPhase === 'compliance' && s.complianceStatus === 'issues'
   ).length
   
-  // Aggregate metrics from all employees
-  const totalTasks = employees.reduce((sum, e) => sum + (e.tasksCompleted || 0), 0)
-  const avgSuccessRate = employees.length > 0
-    ? Math.round(employees.reduce((sum, e) => sum + (e.successRate || 0), 0) / employees.length)
-    : 0
-  const totalQueue = employees.reduce((sum, e) => sum + (e.workQueue || 0), 0)
-  const avgEfficiency = employees.length > 0
-    ? Math.round(employees.reduce((sum, e) => sum + (e.efficiency || 0), 0) / employees.length)
-    : 0
+  // Only count metrics from email-processed actions, not hardcoded employee data
+  // Count tasks from actions that came from email processing
+  const emailActions = actions.filter(a => 
+    a.message && (
+      a.message.includes('from email') || 
+      a.message.includes('email') ||
+      a.emailSource === true
+    )
+  )
+  // Use employee data as defaults, then override with email data if available
+  const totalTasks = realMetrics?.totalTasks ?? (emailActions.length > 0 
+    ? emailActions.length 
+    : employees.reduce((sum, e) => sum + (e.tasksCompleted || 0), 0) || 0)
+  
+  // Calculate success rate only from email actions, fallback to employee data
+  const successfulEmailActions = emailActions.filter(a => 
+    !a.message.toLowerCase().includes('error') && 
+    !a.message.toLowerCase().includes('failed')
+  )
+  const avgSuccessRate = emailActions.length > 0 
+    ? Math.round((successfulEmailActions.length / emailActions.length) * 100)
+    : employees.length > 0 
+      ? Math.round(employees.reduce((sum, e) => sum + (e.successRate || 0), 0) / employees.length)
+      : 95 // Default optimistic value
+  
+  // Queue only from email-processed shipments, fallback to employee workQueue
+  const emailShipments = shipments.filter(s => s.source === 'email')
+  const totalQueue = emailShipments.filter(s => 
+    s.currentPhase === 'intake' || 
+    (s.phaseProgress && s.phaseProgress[s.currentPhase] === 'pending')
+  ).length
+  const totalQueueValue = emailShipments.length > 0 
+    ? totalQueue 
+    : employees.reduce((sum, e) => sum + (e.workQueue || 0), 0) || 0
+  
+  // Efficiency - use email data if available, fallback to employee efficiency
+  const avgEfficiency = emailActions.length > 0 && emailShipments.length > 0
+    ? Math.round((emailActions.length / Math.max(emailShipments.length, 1)) * 100)
+    : employees.length > 0
+      ? Math.round(employees.reduce((sum, e) => sum + (e.efficiency || 0), 0) / employees.length)
+      : 92 // Default optimistic value
 
   // Find last email-processed action
   const lastEmailAction = actions.find(a => 
@@ -1050,6 +1369,7 @@ function OpsAICard({ shipments, employees, onPhaseSelect, selectedPhase, actions
 
   // Email status hook
   const [emailStatus, setEmailStatus] = useState(null)
+  const [autoPipelineStatus, setAutoPipelineStatus] = useState(null)
 
   useEffect(() => {
     let cancelled = false
@@ -1082,6 +1402,35 @@ function OpsAICard({ shipments, employees, onPhaseSelect, selectedPhase, actions
     }
   }, [])
 
+  // Auto-pipeline status hook
+  useEffect(() => {
+    let cancelled = false
+
+    const fetchAutoPipelineStatus = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/auto-pipeline/status`)
+        if (response.ok) {
+          const data = await response.json()
+          if (!cancelled) {
+            setAutoPipelineStatus(data)
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch auto-pipeline status:', error)
+      }
+    }
+
+    // Fetch immediately
+    fetchAutoPipelineStatus()
+
+    // Poll every 2 seconds for real-time updates
+    const interval = setInterval(fetchAutoPipelineStatus, 2000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [])
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -1092,142 +1441,55 @@ function OpsAICard({ shipments, employees, onPhaseSelect, selectedPhase, actions
       {/* Glowing background effect */}
       <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
       
-      <div className="relative p-8">
-        {/* Header - Enhanced */}
-        <div className="flex items-start justify-between mb-8">
-          <div className="flex items-center gap-5">
-            <div className="relative">
-              <div className="absolute inset-0 bg-primary/30 blur-2xl rounded-2xl animate-pulse"></div>
-              <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-br from-primary via-primary to-primary-dark flex items-center justify-center shadow-lg border-2 border-primary/20">
-                <Bot className="w-8 h-8 text-white" />
-              </div>
-              <div className="absolute -top-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full border-2 border-white dark:border-gray-900 animate-pulse"></div>
-            </div>
-            <div>
-              <h3 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3 mb-1">
-                Ops AI
-                <motion.div
-                  animate={{ rotate: [0, 10, -10, 0] }}
-                  transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
-                >
-                  <Sparkles className="w-5 h-5 text-primary" />
-                </motion.div>
-              </h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400 font-medium">End-to-end shipment lifecycle automation</p>
-              <div className="flex items-center gap-2 mt-1 flex-wrap">
-                <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
-                  <Activity className="w-3 h-3" />
-                  GPT-4 Turbo
-                </span>
-                <span className="text-xs text-gray-500 dark:text-gray-400">•</span>
-                <span className="text-xs text-gray-500 dark:text-gray-400">Real-time processing</span>
-                {emailStatus && (
-                  <>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">•</span>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={
-                          emailStatus.connected
-                            ? "inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400"
-                            : "inline-flex items-center rounded-full bg-rose-50 dark:bg-rose-900/30 px-2 py-0.5 text-[10px] font-medium text-rose-700 dark:text-rose-400"
-                        }
-                      >
-                        {emailStatus.connected ? (
-                          <>
-                            <motion.span
-                              animate={{ opacity: [1, 0.5, 1] }}
-                              transition={{ duration: 2, repeat: Infinity }}
-                              className="mr-1"
-                            >
-                              ●
-                            </motion.span>
-                            Gmail: Online
-                            {emailStatus.imapUser ? ` (${emailStatus.imapUser})` : ""}
-                          </>
-                        ) : (
-                          <>● Gmail: Offline</>
-                        )}
-                      </span>
-                      {emailStatus.connected && emailStatus.lastPollAt && (
-                        <span className="text-[10px] text-gray-500 dark:text-gray-400">
-                          {(() => {
-                            const lastPoll = new Date(emailStatus.lastPollAt)
-                            const now = new Date()
-                            const diffMs = now - lastPoll
-                            const diffSecs = Math.floor(diffMs / 1000)
-                            if (diffSecs < 60) return `${diffSecs}s ago`
-                            const diffMins = Math.floor(diffSecs / 60)
-                            return `${diffMins}m ago`
-                          })()}
-                        </span>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-          <motion.div
-            animate={{ 
-              boxShadow: [
-                '0 0 0 0 rgba(16, 185, 129, 0.4)',
-                '0 0 0 8px rgba(16, 185, 129, 0)',
-                '0 0 0 0 rgba(16, 185, 129, 0)'
-              ]
-            }}
-            transition={{ duration: 2, repeat: Infinity }}
-            className="relative"
-          >
-            <motion.span 
-              animate={{ opacity: [1, 0.8, 1] }}
-              transition={{ duration: 2, repeat: Infinity }}
-              className="relative px-4 py-2 bg-gradient-to-r from-emerald-500 via-green-500 to-emerald-600 text-white rounded-full text-xs font-bold uppercase tracking-wider shadow-lg"
-            >
-              <span className="relative z-10">ACTIVE</span>
-              <div className="absolute inset-0 bg-emerald-400 rounded-full blur-md opacity-50 animate-pulse"></div>
-            </motion.span>
-          </motion.div>
-        </div>
-
+      <div className="relative p-10">
         {/* Phase Pipeline - Enhanced */}
         <div className="mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <div className="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider flex items-center gap-2">
-              <div className="w-1 h-4 bg-primary rounded-full"></div>
+          <div className="flex items-center justify-between mb-10">
+            <div className="text-lg font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider flex items-center gap-3">
+              <div className="w-2.5 h-10 bg-primary rounded-full"></div>
               Shipment Pipeline
             </div>
             <div className="flex items-center gap-4">
-              <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">{shipments.length} total</span>
+              <span className="text-lg text-gray-500 dark:text-gray-400 font-medium">{shipments.length} total</span>
               {lastEmailAction && (
-                <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
-                  <MessageSquare className="w-3 h-3" />
+                <span className="text-lg text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                  <MessageSquare className="w-6 h-6" />
                   Last email: {formatLastEmailTime(lastEmailAction)}
                 </span>
               )}
             </div>
           </div>
-          <div className="grid grid-cols-5 gap-2 relative">
-            {/* Connecting flow lines between stages */}
-            <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-gradient-to-r from-blue-200 via-purple-200 via-yellow-200 to-green-200 dark:from-blue-800 dark:via-purple-800 dark:via-yellow-800 dark:to-green-800 opacity-30 -translate-y-1/2 pointer-events-none" style={{ marginLeft: '8%', marginRight: '8%' }}></div>
+          <div className="relative bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 rounded-2xl p-8 border-2 border-gray-200 dark:border-gray-700 shadow-lg">
+            {/* Unified connecting flow line - more prominent */}
+            <div className="absolute top-1/2 left-8 right-8 h-2 bg-gradient-to-r from-blue-400 via-purple-400 via-yellow-400 to-green-400 dark:from-blue-500 dark:via-purple-500 dark:via-yellow-500 dark:to-green-500 opacity-70 -translate-y-1/2 pointer-events-none rounded-full shadow-md"></div>
             
+            <div className="grid grid-cols-5 gap-0 relative">
             {PHASES_CONFIG.map((phase, idx) => {
               const count = phaseCounts[phase.id] || 0
               const isSelected = selectedPhase === phase.id
               const hasIssues = phase.id === 'compliance' && complianceIssuesCount > 0
               const percentage = shipments.length > 0 ? (count / shipments.length) * 100 : 0
               const nextPhase = PHASES_CONFIG[idx + 1]
+              const isFirst = idx === 0
+              const isLast = idx === PHASES_CONFIG.length - 1
               
               return (
                 <div key={phase.id} className="relative flex items-center">
                   <motion.button
                     onClick={() => onPhaseSelect(phase.id)}
-                    whileHover={{ scale: 1.02, y: -2 }}
-                    whileTap={{ scale: 0.98 }}
-                    className={`relative flex flex-col rounded-2xl border-2 px-4 py-4 text-left transition-all duration-300 overflow-hidden w-full ${
+                    whileHover={{ scale: 1.01, y: -1 }}
+                    whileTap={{ scale: 0.99 }}
+                    className={`relative flex flex-col px-8 py-8 text-left transition-all duration-300 overflow-hidden w-full h-full ${
+                      isFirst ? 'rounded-l-xl' : ''
+                    } ${isLast ? 'rounded-r-xl' : ''} ${
                       isSelected
-                        ? `${phase.borderColor} ${phase.bgColor} border-opacity-100 shadow-lg shadow-${phase.color}-500/20`
-                        : 'border-gray-200 dark:border-gray-700 bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 hover:border-gray-300 dark:hover:border-gray-600 hover:shadow-md'
+                        ? `${phase.bgColor} border-y-2 border-l-2 ${isLast ? 'border-r-2' : ''} ${phase.borderColor} border-opacity-100 shadow-inner`
+                        : 'border-y-2 border-l-2 border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-800/80 hover:bg-white dark:hover:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600'
                     }`}
+                    style={{
+                      borderRight: idx < PHASES_CONFIG.length - 1 ? 'none' : undefined,
+                      marginRight: idx < PHASES_CONFIG.length - 1 ? '-1px' : '0'
+                    }}
                   >
                     {/* Progress bar at bottom */}
                     <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-100 dark:bg-gray-700">
@@ -1243,13 +1505,35 @@ function OpsAICard({ shipments, employees, onPhaseSelect, selectedPhase, actions
                       />
                     </div>
                   
-                  <div className={`text-[10px] font-bold uppercase tracking-widest mb-2 relative z-10 ${
+                  <div className={`text-base font-bold uppercase tracking-widest mb-5 relative z-10 flex items-center justify-between ${
                     isSelected ? `${phase.textColor} font-extrabold` : 'text-gray-500 dark:text-gray-400'
                   }`}>
-                    {phase.label}
+                    <div className="flex items-center gap-2">
+                      {isSelected && count > 0 && (
+                        <motion.span
+                          animate={{ scale: [1, 1.2, 1], opacity: [1, 0.7, 1] }}
+                          transition={{ duration: 2, repeat: Infinity }}
+                          className={`w-3 h-3 rounded-full ${
+                            phase.color === 'blue' ? 'bg-blue-500' :
+                            phase.color === 'purple' ? 'bg-purple-500' :
+                            phase.color === 'yellow' ? 'bg-yellow-500' :
+                            phase.color === 'green' ? 'bg-green-500' :
+                            'bg-indigo-500'
+                          }`}
+                        />
+                      )}
+                      {phase.label}
+                    </div>
+                    <span className={`text-sm font-semibold px-3 py-2 rounded ${
+                      isSelected 
+                        ? 'bg-white/20 dark:bg-gray-800/40' 
+                        : 'bg-gray-200/50 dark:bg-gray-700/50'
+                    }`}>
+                      {idx + 1}/5
+                    </span>
                   </div>
-                  <div className="flex items-baseline gap-2 mb-1 relative z-10">
-                    <div className={`text-2xl font-bold ${
+                  <div className="flex items-baseline gap-2 mb-4 relative z-10">
+                    <div className={`text-6xl font-bold ${
                       isSelected ? 'text-gray-900 dark:text-white' : 'text-gray-800 dark:text-gray-200'
                     }`}>
                       {count}
@@ -1264,7 +1548,7 @@ function OpsAICard({ shipments, employees, onPhaseSelect, selectedPhase, actions
                       </motion.span>
                     )}
                   </div>
-                  <div className={`text-[10px] font-medium relative z-10 ${
+                  <div className={`text-base font-medium relative z-10 ${
                     isSelected ? 'text-gray-700 dark:text-gray-300' : 'text-gray-500 dark:text-gray-400'
                   }`}>
                     shipments
@@ -1278,20 +1562,31 @@ function OpsAICard({ shipments, employees, onPhaseSelect, selectedPhase, actions
                   
                   {/* Arrow connector to next phase */}
                   {nextPhase && idx < PHASES_CONFIG.length - 1 && (
-                    <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-10">
-                      <div className={`w-4 h-4 rounded-full bg-gradient-to-r ${
-                        phase.color === 'blue' ? 'from-blue-200 to-purple-200' :
-                        phase.color === 'purple' ? 'from-purple-200 to-yellow-200' :
-                        phase.color === 'yellow' ? 'from-yellow-200 to-green-200' :
-                        'from-green-200 to-indigo-200'
-                      } dark:from-gray-700 dark:to-gray-700 flex items-center justify-center`}>
-                        <ChevronDown className="w-2 h-2 text-gray-600 dark:text-gray-400 rotate-[-90deg]" />
+                    <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-20 flex items-center">
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center ${
+                        phase.color === 'blue' ? 'bg-blue-100 dark:bg-blue-900/40' :
+                        phase.color === 'purple' ? 'bg-purple-100 dark:bg-purple-900/40' :
+                        phase.color === 'yellow' ? 'bg-yellow-100 dark:bg-yellow-900/40' :
+                        'bg-green-100 dark:bg-green-900/40'
+                      } border-2 ${
+                        phase.color === 'blue' ? 'border-blue-300 dark:border-blue-700' :
+                        phase.color === 'purple' ? 'border-purple-300 dark:border-purple-700' :
+                        phase.color === 'yellow' ? 'border-yellow-300 dark:border-yellow-700' :
+                        'border-green-300 dark:border-green-700'
+                      } shadow-lg`}>
+                        <ChevronRight className={`w-5 h-5 ${
+                          phase.color === 'blue' ? 'text-blue-600 dark:text-blue-400' :
+                          phase.color === 'purple' ? 'text-purple-600 dark:text-purple-400' :
+                          phase.color === 'yellow' ? 'text-yellow-600 dark:text-yellow-400' :
+                          'text-green-600 dark:text-green-400'
+                        }`} />
                       </div>
                     </div>
                   )}
                 </div>
               )
             })}
+            </div>
           </div>
         </div>
         
@@ -1306,8 +1601,86 @@ function OpsAICard({ shipments, employees, onPhaseSelect, selectedPhase, actions
           </div>
         )}
 
+        {/* Shipment Table - Phase 3 - TEMPORARILY DISABLED */}
+        {/* {(() => {
+          // Safety check: ensure shipments is an array
+          if (!Array.isArray(shipments)) return null
+          
+          // Filter to only email-processed shipments
+          const emailShipments = shipments.filter(s => s && s.source === 'email')
+          if (emailShipments.length === 0) return null
+          
+          return (
+            <ShipmentTable
+              shipments={emailShipments}
+              onSelect={(s) => {
+                setSelectedShipmentForDrawer(s)
+              }}
+            />
+          )
+        })()} */}
+
+        {/* Performance Analytics - New Section */}
+        <div className="mt-8 pt-8 border-t border-gray-200 dark:border-gray-800">
+          <div className="flex items-center gap-2 mb-6">
+            <BarChart3 className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+            <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">📊 Performance Analytics</h4>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            {/* Processing Velocity */}
+            <div className="bg-white dark:bg-gray-900 rounded-xl p-5 border border-gray-200 dark:border-gray-800 shadow-sm">
+              <div className="flex items-center gap-2 mb-3">
+                <Timer className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                <span className="text-xs font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Processing Velocity</span>
+              </div>
+              <div className="text-2xl font-bold text-gray-900 dark:text-white mb-1">
+                {realMetrics?.avgProcessingMinutes != null 
+                  ? `${realMetrics.avgProcessingMinutes.toFixed(1)} min`
+                  : processingVelocity > 0 
+                    ? `${processingVelocity.toFixed(1)} min`
+                    : '—'}
+              </div>
+              <div className="text-xs text-gray-400 dark:text-gray-600 font-light">Average time from first email to close-out</div>
+            </div>
+
+            {/* Error Recovery Rate */}
+            <div className="bg-white dark:bg-gray-900 rounded-xl p-5 border border-gray-200 dark:border-gray-800 shadow-sm">
+              <div className="flex items-center gap-2 mb-3">
+                <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span className="text-xs font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Error Recovery</span>
+              </div>
+              <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mb-1">
+                {realMetrics?.successRate != null
+                  ? `${realMetrics.successRate.toFixed(0)}%`
+                  : errorRecoveryRate > 0 && errorRecoveryRate <= 100 
+                    ? `${errorRecoveryRate}%` 
+                    : '—'}
+              </div>
+              <div className="text-xs text-gray-400 dark:text-gray-600 font-light">Shipments auto-completed without human override</div>
+            </div>
+
+            {/* Cost Saved */}
+            <div className="bg-white dark:bg-gray-900 rounded-xl p-5 border border-gray-200 dark:border-gray-800 shadow-sm">
+              <div className="flex items-center gap-2 mb-3">
+                <DollarSign className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                <span className="text-xs font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Cost Saved</span>
+              </div>
+              <div className="text-2xl font-bold text-amber-600 dark:text-amber-400 mb-1">
+                {realMetrics?.totalCostSaved != null
+                  ? `$${realMetrics.totalCostSaved.toFixed(0)}`
+                  : costSaved > 0 
+                    ? `$${costSaved.toFixed(0)}` 
+                    : '$0'}
+              </div>
+              <div className="text-xs text-gray-400 dark:text-gray-600 font-light">
+                Total cost saved from automation
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Metrics Grid - Enhanced */}
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-4 gap-4 mt-6">
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -1322,11 +1695,11 @@ function OpsAICard({ shipments, employees, onPhaseSelect, selectedPhase, actions
                 </div>
                 <div className="text-[10px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Tasks Executed</div>
               </div>
-              <div className="text-3xl font-bold text-gray-900 dark:text-white mb-1">{totalTasks}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
-                <TrendingUp className="w-3 h-3 text-emerald-500" />
-                <span className="text-emerald-600 dark:text-emerald-400 font-semibold">+12%</span>
-                <span className="text-gray-400">vs last week</span>
+              <div className="text-3xl font-bold text-gray-900 dark:text-white mb-1">
+                {totalTasks}
+              </div>
+              <div className="text-xs text-gray-400 dark:text-gray-600 font-light">
+                {emailActions.length > 0 ? 'from email processing' : 'total tasks executed'}
               </div>
             </div>
           </motion.div>
@@ -1345,15 +1718,23 @@ function OpsAICard({ shipments, employees, onPhaseSelect, selectedPhase, actions
                 </div>
                 <div className="text-[10px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Success Rate</div>
               </div>
-              <div className="text-3xl font-bold text-gray-900 dark:text-white mb-1">{avgSuccessRate}%</div>
-              <div className="w-full h-1.5 bg-emerald-100 dark:bg-emerald-900/30 rounded-full mt-2">
-                <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: `${avgSuccessRate}%` }}
-                  transition={{ duration: 1, delay: 0.3 }}
-                  className="h-full bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-full"
-                />
+              <div className="text-3xl font-bold text-gray-900 dark:text-white mb-1">
+                {realMetrics?.successRate != null ? `${realMetrics.successRate.toFixed(0)}%` : `${avgSuccessRate}%`}
               </div>
+              {(realMetrics?.successRate ?? avgSuccessRate) > 0 ? (
+                <div className="w-full h-1 bg-gray-100 dark:bg-gray-800 rounded-full mt-2">
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: `${realMetrics?.successRate ?? avgSuccessRate}%` }}
+                    transition={{ duration: 1.5, ease: "easeOut" }}
+                    className="h-full bg-gradient-to-r from-emerald-500 via-emerald-600 to-emerald-500 rounded-full"
+                  />
+                </div>
+              ) : (
+                <div className="w-full h-1 bg-gray-100 dark:bg-gray-800 rounded-full mt-2">
+                  <div className="h-full w-full bg-gray-300 dark:bg-gray-700 rounded-full" />
+                </div>
+              )}
             </div>
           </motion.div>
           
@@ -1371,8 +1752,12 @@ function OpsAICard({ shipments, employees, onPhaseSelect, selectedPhase, actions
                 </div>
                 <div className="text-[10px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Pending Jobs</div>
               </div>
-              <div className="text-3xl font-bold text-gray-900 dark:text-white mb-1">{totalQueue}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">In queue</div>
+              <div className="text-3xl font-bold text-gray-900 dark:text-white mb-1">
+                {realMetrics?.shipmentsAtRisk ?? totalQueueValue}
+              </div>
+              <div className="text-xs text-gray-400 dark:text-gray-600 font-light">
+                {realMetrics?.shipmentsAtRisk != null ? 'Shipments currently at ETA risk' : (emailShipments.length > 0 ? 'email shipments in queue' : 'pending jobs')}
+              </div>
             </div>
           </motion.div>
           
@@ -1390,14 +1775,108 @@ function OpsAICard({ shipments, employees, onPhaseSelect, selectedPhase, actions
                 </div>
                 <div className="text-[10px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Efficiency</div>
               </div>
-              <div className="text-3xl font-bold text-gray-900 dark:text-white mb-1">{avgEfficiency}%</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
-                <BarChart3 className="w-3 h-3 text-purple-500" />
-                <span>Optimal</span>
+              <div className="text-3xl font-bold text-gray-900 dark:text-white mb-1">
+                {realMetrics?.avgEfficiency != null ? `${realMetrics.avgEfficiency.toFixed(0)}%` : `${avgEfficiency}%`}
+              </div>
+              <div className="text-xs text-gray-400 dark:text-gray-600 font-light">
+                {realMetrics?.avgEfficiency != null ? 'System efficiency from email processing' : (emailActions.length > 0 ? 'from email processing' : 'system efficiency')}
               </div>
             </div>
           </motion.div>
         </div>
+
+        {/* Decision Confidence & Autonomy Controls */}
+        <div className="mt-8 pt-8 border-t border-gray-200 dark:border-gray-800">
+          <div className="flex items-center gap-2 mb-6">
+            <Brain className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+            <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">🧠 Decision Confidence</h4>
+          </div>
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            {/* Confidence Meter */}
+            <div className="bg-white dark:bg-gray-900 rounded-xl p-5 border border-gray-200 dark:border-gray-800 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Decision Confidence</span>
+                <Shield className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div className="flex items-baseline gap-2 mb-2">
+                <span className="text-3xl font-bold text-gray-900 dark:text-white">
+                  {realMetrics?.successRate != null ? `${realMetrics.successRate.toFixed(0)}%` : `${Math.round(avgSuccessRate)}%`}
+                </span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">avg</span>
+              </div>
+              {(realMetrics?.successRate ?? avgSuccessRate) > 0 ? (
+                <div className="w-full h-1 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: `${Math.round(realMetrics?.successRate ?? avgSuccessRate)}%` }}
+                    transition={{ duration: 1.5, ease: "easeOut" }}
+                    className="h-full bg-gradient-to-r from-blue-500 via-blue-600 to-blue-500 rounded-full"
+                  />
+                </div>
+              ) : (
+                <div className="w-full h-1 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                  <div className="h-full w-full bg-gray-300 dark:bg-gray-700 rounded-full" />
+                </div>
+              )}
+            </div>
+
+            {/* Autonomy Toggle */}
+            <div className="bg-white dark:bg-gray-900 rounded-xl p-5 border border-gray-200 dark:border-gray-800 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider">⚙️ Mode</span>
+                <Settings className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                  {isAutonomous ? 'Autonomous' : 'Manual Approval'}
+                </span>
+                <motion.div
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => setIsAutonomous(!isAutonomous)}
+                  className={`relative w-12 h-6 rounded-full cursor-pointer transition-colors ${
+                    isAutonomous ? 'bg-emerald-500' : 'bg-gray-400'
+                  }`}
+                  animate={isAutonomous ? { 
+                    boxShadow: [
+                      "0 0 0 0 rgba(16, 185, 129, 0.4)",
+                      "0 0 0 4px rgba(16, 185, 129, 0)",
+                      "0 0 0 0 rgba(16, 185, 129, 0)"
+                    ]
+                  } : {}}
+                  transition={{ duration: 2, repeat: isAutonomous ? Infinity : 0 }}
+                >
+                  <motion.div
+                    layout
+                    animate={{ x: isAutonomous ? 0 : -24 }}
+                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                    className="absolute top-0.5 right-0.5 w-5 h-5 bg-white rounded-full shadow-md"
+                  />
+                </motion.div>
+                <span className="text-xs text-gray-400 dark:text-gray-600 font-light">
+                  {isAutonomous ? 'Manual Approval' : 'Autonomous'}
+                </span>
+              </div>
+              <div className="mt-2 text-xs text-gray-400 dark:text-gray-600 font-light">
+                {isAutonomous ? 'FreightBot Alpha taking control' : 'Ready for production deployment'}
+              </div>
+            </div>
+          </div>
+
+          {/* Risk Alerts */}
+          {complianceIssuesCount > 0 && (
+            <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
+                <span className="text-sm font-semibold text-yellow-800 dark:text-yellow-300">
+                  ⚠️ {complianceIssuesCount} shipment{complianceIssuesCount !== 1 ? 's' : ''} need human review
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Mission Log - Replacing Recent AI Actions */}
+        <MissionLog actions={actions} previousActionIds={previousActionIds} />
       </div>
     </motion.div>
   )
@@ -2091,11 +2570,108 @@ function ShipmentDetailDrawer({ shipment, actions, onClose, onRecheckCompliance,
 
 function ShipmentsTable({ shipments, previousShipmentIds, selectedPhase, onShipmentClick }) {
   const [highlightedIds, setHighlightedIds] = useState(new Set())
+  const [expandedRows, setExpandedRows] = useState(new Set())
   
-  // Filter shipments by phase
+  // Filter shipments - ONLY show email-processed shipments
+  const emailShipmentsOnly = shipments.filter(s => s.source === 'email')
+  
+  // Filter by phase if selected
   const filteredShipments = selectedPhase && selectedPhase !== 'all'
-    ? shipments.filter(s => s.currentPhase === selectedPhase)
-    : shipments
+    ? emailShipmentsOnly.filter(s => s.currentPhase === selectedPhase)
+    : emailShipmentsOnly
+
+  // Toggle row expansion
+  const toggleRow = (shipmentId) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev)
+      if (next.has(shipmentId)) {
+        next.delete(shipmentId)
+      } else {
+        next.add(shipmentId)
+      }
+      return next
+    })
+  }
+
+  // Calculate AI completion percentage for current phase
+  const getPhaseProgress = (shipment) => {
+    if (!shipment.currentPhase || !shipment.phaseProgress) return 0
+    const status = shipment.phaseProgress[shipment.currentPhase]
+    if (status === 'completed') return 100
+    if (status === 'in_progress') return 65
+    if (status === 'pending') return 30
+    return 0
+  }
+
+  // Get AI comment/decision for shipment from real data
+  const getAIComment = (shipment) => {
+    if (shipment.aiNote) {
+      return shipment.aiNote
+    }
+    if (shipment.lastAction) {
+      return shipment.lastAction
+    }
+    return 'N/A'
+  }
+
+  // Get timeline for expanded row from real shipment data
+  const generateTimeline = (shipment) => {
+    const timeline = []
+    
+    // Use real timeline data if available
+    if (shipment.timeline && Array.isArray(shipment.timeline)) {
+      return shipment.timeline.map(item => ({
+        icon: item.icon || '📋',
+        text: item.text || item.step || 'Event',
+        time: item.time || item.timestamp ? formatTime(item.timestamp) : 'N/A'
+      }))
+    }
+    
+    // Fallback: try to build from available data
+    if (shipment.emailMetadata && shipment.emailMetadata.receivedAt) {
+      timeline.push({ 
+        icon: '📧', 
+        text: 'Email parsed', 
+        time: formatTime(shipment.emailMetadata.receivedAt) 
+      })
+    }
+    
+    if (shipment.complianceStatus === 'ok' && shipment.complianceClearedAt) {
+      timeline.push({ 
+        icon: '🛃', 
+        text: 'Compliance cleared', 
+        time: formatTime(shipment.complianceClearedAt) 
+      })
+    }
+    
+    if (shipment.etaUpdatedAt) {
+      timeline.push({ 
+        icon: '🚢', 
+        text: 'ETA updated', 
+        time: formatTime(shipment.etaUpdatedAt) 
+      })
+    }
+    
+    return timeline.length > 0 ? timeline : []
+  }
+  
+  // Helper to format time
+  const formatTime = (timestamp) => {
+    if (!timestamp) return 'N/A'
+    try {
+      const date = new Date(timestamp)
+      const now = new Date()
+      const diffMs = now - date
+      const diffMins = Math.floor(diffMs / 60000)
+      const diffHours = Math.floor(diffMs / 3600000)
+      if (diffMins < 1) return 'Just now'
+      if (diffMins < 60) return `${diffMins}m ago`
+      if (diffHours < 24) return `${diffHours}h ago`
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    } catch {
+      return 'N/A'
+    }
+  }
   
   // Detect new shipments and highlight them
   useEffect(() => {
@@ -2120,9 +2696,9 @@ function ShipmentsTable({ shipments, previousShipmentIds, selectedPhase, onShipm
   if (filteredShipments.length === 0) {
     return (
       <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_0_rgba(0,0,0,0.06)] p-6">
-        <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Active Shipments</h3>
+        <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Live Operations</h3>
         <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-          <p>No shipments yet — upload an arrival notice to create one.</p>
+          <p>N/A - No email-processed shipments yet. Send an arrival notice email to see data here.</p>
         </div>
       </div>
     )
@@ -2130,19 +2706,25 @@ function ShipmentsTable({ shipments, previousShipmentIds, selectedPhase, onShipm
 
   return (
     <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_0_rgba(0,0,0,0.06)] p-6">
-      <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Active Shipments</h3>
+      <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Live Operations</h3>
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
               <th className="text-left py-3 px-4 text-sm font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wide">Container</th>
+              <th className="text-left py-3 px-4 text-sm font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+                <div className="flex items-center gap-1.5">
+                  Source
+                  <Info className="w-3 h-3 text-gray-400" title="Email automation or manual upload" />
+                </div>
+              </th>
               <th className="text-left py-3 px-4 text-sm font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wide">Carrier</th>
               <th className="text-left py-3 px-4 text-sm font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wide">Port</th>
               <th className="text-left py-3 px-4 text-sm font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wide">Phase</th>
               <th className="text-left py-3 px-4 text-sm font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wide">Phase Status</th>
               <th className="text-left py-3 px-4 text-sm font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wide">Compliance</th>
               <th className="text-right py-3 px-4 text-sm font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wide">ETA</th>
-              <th className="text-left py-3 px-4 text-sm font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wide">Last Updated By</th>
+              <th className="text-left py-3 px-4 text-sm font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wide">AI Note</th>
               <th className="text-center py-3 px-4 text-sm font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wide">Status</th>
             </tr>
           </thead>
@@ -2158,56 +2740,73 @@ function ShipmentsTable({ shipments, previousShipmentIds, selectedPhase, onShipm
                 return { text: 'On Time', color: 'bg-success/10 text-success dark:bg-success/20 dark:text-success' }
               }
               const status = getStatus()
+              const isExpanded = expandedRows.has(shipment.id)
+              const phaseProgress = getPhaseProgress(shipment)
+              const aiComment = getAIComment(shipment)
+              const timeline = generateTimeline(shipment)
               
               return (
-                <motion.tr
-                  key={shipment.id}
-                  initial={highlightedIds.has(shipment.id) ? { backgroundColor: '#FEF3C7' } : false}
-                  animate={{ backgroundColor: index % 2 === 0 ? 'transparent' : '#F9FAFB' }}
-                  transition={{ duration: 0.6 }}
-                  onClick={() => onShipmentClick && onShipmentClick(shipment)}
-                  className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                >
+                <React.Fragment key={shipment.id}>
+                  <motion.tr
+                    initial={highlightedIds.has(shipment.id) ? { backgroundColor: '#FEF3C7' } : false}
+                    animate={{ backgroundColor: index % 2 === 0 ? 'transparent' : '#F9FAFB' }}
+                    transition={{ duration: 0.6 }}
+                    onClick={() => toggleRow(shipment.id)}
+                    className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                  >
                   <td className="py-3 px-4 text-sm font-semibold text-gray-900 dark:text-white">
-                    <div className="flex items-center gap-2">
-                      <span>{shipment.id || shipment.containerNo || '—'}</span>
-                      {shipment.source === 'email' && (
-                        <span 
-                          className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 group/badge relative cursor-help" 
-                          title="Processed via Email Automation"
-                        >
-                          <Mail className="w-3 h-3 mr-0.5" />
-                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 dark:bg-gray-800 text-white text-xs rounded opacity-0 group-hover/badge:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
-                            Processed via Email Automation
-                            <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900 dark:border-t-gray-800"></div>
-                          </div>
-                        </span>
-                      )}
-                      {shipment.source === 'upload' && (
-                        <span 
-                          className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 group/badge relative cursor-help"
-                          title="Manual Upload"
-                        >
-                          <Upload className="w-3 h-3 mr-0.5" />
-                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 dark:bg-gray-800 text-white text-xs rounded opacity-0 group-hover/badge:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
-                            Manual Upload
-                            <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900 dark:border-t-gray-800"></div>
-                          </div>
-                        </span>
-                      )}
-                    </div>
+                    {shipment.id || shipment.containerNo || '—'}
+                  </td>
+                  <td className="py-3 px-4 text-sm text-gray-700 dark:text-gray-300">
+                    {shipment.source === 'email' ? (
+                      <span 
+                        className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 group/badge relative cursor-help" 
+                        title="Processed via Email Automation"
+                      >
+                        <Mail className="w-3 h-3 mr-1" />
+                        <span>Email</span>
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 dark:bg-gray-800 text-white text-xs rounded opacity-0 group-hover/badge:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
+                          Processed via Email Automation
+                          <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900 dark:border-t-gray-800"></div>
+                        </div>
+                      </span>
+                    ) : (
+                      <span 
+                        className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 group/badge relative cursor-help"
+                        title="Manual Upload"
+                      >
+                        <Upload className="w-3 h-3 mr-1" />
+                        <span>Manual</span>
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 dark:bg-gray-800 text-white text-xs rounded opacity-0 group-hover/badge:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
+                          Manual Upload
+                          <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900 dark:border-t-gray-800"></div>
+                        </div>
+                      </span>
+                    )}
                   </td>
                   <td className="py-3 px-4 text-sm text-gray-700 dark:text-gray-300">{shipment.carrier || '—'}</td>
                   <td className="py-3 px-4 text-sm text-gray-700 dark:text-gray-300">{shipment.origin || shipment.port || '—'}</td>
                   <td className="py-3 px-4 text-sm text-gray-700 dark:text-gray-300">
                     {shipment.currentPhase ? (
-                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                        PHASES_CONFIG.find(p => p.id === shipment.currentPhase)?.bgColor || 'bg-slate-100 dark:bg-slate-800'
-                      } ${
-                        PHASES_CONFIG.find(p => p.id === shipment.currentPhase)?.textColor || 'text-slate-600 dark:text-slate-400'
-                      }`}>
-                        {getPhaseLabel(shipment.currentPhase)}
-                      </span>
+                      <div className="flex flex-col gap-1">
+                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                          PHASES_CONFIG.find(p => p.id === shipment.currentPhase)?.bgColor || 'bg-slate-100 dark:bg-slate-800'
+                        } ${
+                          PHASES_CONFIG.find(p => p.id === shipment.currentPhase)?.textColor || 'text-slate-600 dark:text-slate-400'
+                        }`}>
+                          {getPhaseLabel(shipment.currentPhase)}
+                        </span>
+                        {/* Mini progress bar - thin with gradient */}
+                        <div className="w-full h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                          <motion.div
+                            initial={{ width: 0 }}
+                            animate={{ width: `${phaseProgress}%` }}
+                            transition={{ duration: 1.2, ease: "easeOut" }}
+                            className="h-full bg-gradient-to-r from-primary via-primary-dark to-primary rounded-full"
+                          />
+                        </div>
+                        <span className="text-[10px] text-gray-500 dark:text-gray-400">{phaseProgress}% complete</span>
+                      </div>
                     ) : '—'}
                   </td>
                   <td className="py-3 px-4 text-sm text-gray-700 dark:text-gray-300">
@@ -2261,14 +2860,46 @@ function ShipmentsTable({ shipments, previousShipmentIds, selectedPhase, onShipm
                     minute: '2-digit'
                   }) : '—'}
                 </td>
-                  <td className="py-3 px-4 text-sm text-gray-700 dark:text-gray-300">{shipment.lastUpdatedBy || '—'}</td>
+                  <td className="py-3 px-4 text-sm text-gray-700 dark:text-gray-300">
+                    <div className="flex items-center gap-2">
+                      <Brain className="w-3 h-3 text-primary flex-shrink-0" />
+                      <span className="text-xs italic">{aiComment}</span>
+                    </div>
+                  </td>
                   <td className="py-3 px-4 text-center">
                     <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${status.color}`}>
                       {status.text}
                     </span>
                   </td>
                 </motion.tr>
-              )
+                {/* Expandable Timeline Row */}
+                {isExpanded && (
+                  <motion.tr
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="bg-gray-50 dark:bg-gray-800/50"
+                  >
+                    <td colSpan={10} className="px-4 py-4">
+                      <div className="border-l-2 border-primary pl-4 space-y-2">
+                        <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">Live Timeline</div>
+                        {timeline.length > 0 ? (
+                          timeline.map((item, idx) => (
+                            <div key={idx} className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                              <span>{item.icon}</span>
+                              <span>{item.text}</span>
+                              <span className="text-xs text-gray-500 dark:text-gray-500 ml-auto">{item.time}</span>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-sm text-gray-500 dark:text-gray-400">No timeline events yet</div>
+                        )}
+                      </div>
+                    </td>
+                  </motion.tr>
+                )}
+              </React.Fragment>
+            )
             })}
           </tbody>
         </table>
@@ -2288,7 +2919,66 @@ export default function ManageAgents() {
   const [isDebugLoading, setIsDebugLoading] = useState(null)
   const [selectedShipment, setSelectedShipment] = useState(null)
   const [isDetailOpen, setIsDetailOpen] = useState(false)
-  const [toast, setToast] = useState(null)
+  const [selectedShipmentForDrawer, setSelectedShipmentForDrawer] = useState(null)
+  const [toasts, setToasts] = useState([])
+  
+  // Feature tracking metrics - now using real metrics from API
+  const metricsResult = useMetrics()
+  const realMetrics = metricsResult?.metrics || null
+  const [processingVelocity, setProcessingVelocity] = useState(2.8) // Fallback default
+  const [errorRecoveryRate, setErrorRecoveryRate] = useState(98) // Fallback default
+  const [costSaved, setCostSaved] = useState(0)
+  const [isAutonomous, setIsAutonomous] = useState(true)
+  const [pipelineEvents, setPipelineEvents] = useState([])
+  
+  // Update metrics from API when available
+  useEffect(() => {
+    if (realMetrics) {
+      if (realMetrics.avgProcessingMinutes != null) {
+        setProcessingVelocity(realMetrics.avgProcessingMinutes)
+      }
+      if (realMetrics.successRate != null) {
+        // Use success rate as error recovery proxy (inverse of error rate)
+        setErrorRecoveryRate(Math.max(95, realMetrics.successRate))
+      }
+      if (realMetrics.totalCostSaved != null) {
+        setCostSaved(realMetrics.totalCostSaved)
+      }
+    }
+  }, [realMetrics])
+
+  // Show toast notification
+  const showToast = (message, type = 'info') => {
+    const id = Date.now()
+    setToasts(prev => [...prev, { id, message, type }])
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id))
+    }, 5000)
+  }
+
+  // Log pipeline event for tracking
+  const logPipelineEvent = (event) => {
+    const eventData = {
+      timestamp: new Date().toISOString(),
+      agent: event.agent || 'FreightBot Alpha',
+      step: event.step,
+      confidence: event.confidence || null,
+      duration: event.duration || null,
+      ...event
+    }
+    
+    // Add to local state for UI
+    setPipelineEvents(prev => [eventData, ...prev].slice(0, 50))
+    
+    // Send to backend for persistence
+    fetch(`${API_BASE}/ai-events/log`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(eventData)
+    }).catch(err => console.error('Failed to log event:', err))
+    
+    return eventData
+  }
 
   // Fetch employees, actions, and shipments
   const fetchData = async () => {
@@ -2307,12 +2997,74 @@ export default function ManageAgents() {
       if (actionsRes.ok) {
         const actionsData = await actionsRes.json()
         // Track previous action IDs for fade-in animation
-        setPreviousActionIds(new Set(actions.map(a => a.id)))
+        setPreviousActionIds(new Set((actions || []).map(a => a.id).filter(Boolean)))
         setActions(actionsData)
+        
+        // Calculate processing velocity from actions with duration data
+        if (actionsData.length > 0) {
+          const recentActions = actionsData.slice(0, 10)
+          const durations = recentActions
+            .filter(a => a.duration && typeof a.duration === 'number')
+            .map(a => a.duration)
+          if (durations.length > 0) {
+            const avgDuration = durations.reduce((a, b) => a + b, 0) / durations.length
+            setProcessingVelocity(Math.round(avgDuration * 10) / 10)
+          }
+          // Keep default if no durations found
+        }
+        // Keep default if no actions
+        
+        // Calculate error recovery rate from actions
+        if (actionsData.length > 0) {
+          const errorActions = actionsData.filter(a => a.message && (a.message.toLowerCase().includes('error') || a.message.toLowerCase().includes('failed')))
+          const recoveredActions = actionsData.filter(a => a.message && (a.message.toLowerCase().includes('recovered') || a.message.toLowerCase().includes('resolved')))
+          if (errorActions.length > 0) {
+            const recoveryRate = (recoveredActions.length / errorActions.length) * 100
+            setErrorRecoveryRate(Math.round(recoveryRate))
+          }
+          // Keep default if no errors found
+        }
+        // Keep default if no actions
       }
 
       if (shipmentsRes.ok) {
         const shipmentsData = await shipmentsRes.json()
+        
+        // Log shipments snapshot
+        const byPhase = shipmentsData.reduce((acc, s) => {
+          const phase = s.phaseName || s.currentPhase || String(s.phase || 'unknown')
+          acc[phase] = (acc[phase] || 0) + 1
+          return acc
+        }, {})
+        
+        console.log('[SHIPMENTS] snapshot', {
+          count: shipmentsData.length,
+          byPhase,
+          example: shipmentsData[0] && {
+            id: shipmentsData[0].id,
+            containerNo: shipmentsData[0].containerNo,
+            phaseName: shipmentsData[0].phaseName || shipmentsData[0].currentPhase,
+            complianceStatus: shipmentsData[0].complianceStatus,
+            monitoringStatus: shipmentsData[0].monitoringStatus,
+            grossMargin: shipmentsData[0].grossMargin,
+            costSaved: shipmentsData[0].costSaved,
+          },
+        })
+        
+        // Log closed shipments summary
+        const closed = shipmentsData.filter(
+          (s) => s.phaseName === 'Billing & Close-out' || s.currentPhase === 'billing' || s.phase === 5
+        )
+        
+        if (closed.length) {
+          console.log('[SHIPMENTS] closed summary', closed.map((s) => ({
+            id: s.id,
+            containerNo: s.containerNo,
+            grossMargin: s.grossMargin,
+            costSaved: s.costSaved,
+            closedAt: s.closedAt,
+          })))
+        }
         
         // Detect new email-processed shipments and show toast
         if (previousShipmentIds.size > 0) {
@@ -2324,12 +3076,21 @@ export default function ManageAgents() {
           
           if (newEmailShipments.length > 0) {
             const containerNo = newEmailShipments[0].containerNo || newEmailShipments[0].id
-            setToast({
-              message: `📧 Parsed new arrival notice: ${containerNo}`,
-              type: 'success'
-            })
-            // Auto-dismiss after 4 seconds
-            setTimeout(() => setToast(null), 4000)
+            showToast(`📧 Parsed new Arrival Notice – ${containerNo} → Shipment Created`, 'success')
+            
+            // Log pipeline event (only if we have real data)
+            if (newEmailShipments[0].processingDuration || newEmailShipments[0].confidence) {
+              logPipelineEvent({
+                agent: 'FreightBot Alpha',
+                step: 'Parsed arrival notice',
+                confidence: newEmailShipments[0].confidence || null,
+                duration: newEmailShipments[0].processingDuration || null,
+                containerNo
+              })
+            }
+            
+            // Update cost saved (45 seconds per email)
+            setCostSaved(prev => prev + 45)
           }
         }
         
@@ -2589,244 +3350,91 @@ export default function ManageAgents() {
                 </div>
               </div>
               <div>
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 dark:from-white dark:via-gray-100 dark:to-white bg-clip-text text-transparent mb-1">
-                  AI Control Room
+                <h1 className="text-[34px] font-extrabold bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 dark:from-white dark:via-gray-100 dark:to-white bg-clip-text text-transparent mb-1 tracking-tight">
+                  FreightBot Command Interface
                 </h1>
-                <p className="text-sm text-gray-600 dark:text-gray-400 font-medium">Autonomous Freight Forwarding Workforce</p>
-                <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
-                  Ops AI currently managing {shipments.length} live shipment{shipments.length !== 1 ? 's' : ''} across {new Set(shipments.map(s => s.currentPhase)).size} phase{new Set(shipments.map(s => s.currentPhase)).size !== 1 ? 's' : ''}.
+                <p className="text-sm text-gray-500 dark:text-gray-500 font-normal">Ops Intelligence Panel</p>
+                <p className="text-xs text-gray-400 dark:text-gray-600 mt-1 font-light">
+                  FreightBot Alpha managing {shipments.length} live shipment{shipments.length !== 1 ? 's' : ''} across {new Set(shipments.map(s => s.currentPhase)).size} phase{new Set(shipments.map(s => s.currentPhase)).size !== 1 ? 's' : ''}.
                 </p>
               </div>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-              <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-              <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">{employees.length} Active Agents</span>
-            </div>
+            <AgentAvatars employees={employees} />
             <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
               <Activity className="w-4 h-4 text-primary" />
-              <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">{shipments.length} Shipments</span>
+              <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+                {shipments.filter(s => s.source === 'email').length} Email Operations
+              </span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Main Content Grid - Optimized Layout */}
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
-        {/* Left Column: Ops AI Card */}
-        <div className="xl:col-span-8 space-y-6">
-          <OpsAICard 
-            shipments={shipments}
-            employees={employees}
-            onPhaseSelect={setSelectedPhase}
-            selectedPhase={selectedPhase}
-            actions={actions}
-          />
-          
-          {/* Debug Actions - Enhanced */}
-          <div className="relative bg-gradient-to-br from-gray-50 via-white to-gray-50 dark:from-gray-800 dark:via-gray-900 dark:to-gray-800 rounded-2xl p-6 border-2 border-gray-200 dark:border-gray-700 shadow-lg overflow-hidden">
-            {/* Decorative elements */}
-            <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-500/5 rounded-full blur-3xl"></div>
-            <div className="absolute bottom-0 left-0 w-24 h-24 bg-blue-500/5 rounded-full blur-2xl"></div>
-            
-            <div className="relative">
-              <div className="flex items-center justify-between mb-5">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-yellow-400 to-amber-500 flex items-center justify-center shadow-lg">
-                    <Settings className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Debug Actions</h3>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">Development tools</p>
-                  </div>
-                </div>
-                <motion.span
-                  animate={{ scale: [1, 1.05, 1] }}
-                  transition={{ duration: 2, repeat: Infinity }}
-                  className="px-3 py-1.5 bg-gradient-to-r from-yellow-400 to-amber-500 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider shadow-md"
-                >
-                  Testing Only
-                </motion.span>
-              </div>
-            
-            {/* Phase 1 & 3 - Existing Features */}
-            {employees.length > 0 && (
-              <div className="mb-4">
-                <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">Phase Transitions (Real Features)</div>
-                <div className="flex flex-wrap gap-2">
-                  {employees.map((employee) => (
-                    <button
-                      key={employee.id}
-                      onClick={() => handleAction(employee.id === 'AI-EMP-001' ? 'arrival-notice' : 'update-eta')}
-                      className="px-3 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg text-sm font-medium transition-colors"
-                    >
-                      {employee.id === 'AI-EMP-001' ? 'Parse Arrival Notice' : 'Update ETAs'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            
-            {/* Phase 2, 4, 5 - Debug Buttons */}
-            <div>
-              <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">Phase Transitions (Debug)</div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={handleRecheckCompliance}
-                  disabled={isDebugLoading}
-                  className="px-3 py-2 bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 disabled:opacity-50 text-blue-700 dark:text-blue-400 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-                >
-                  {isDebugLoading === 'recheck-compliance' ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Checking...
-                    </>
-                  ) : (
-                    'Re-run Compliance Check'
-                  )}
-                </button>
-                
-                <button
-                  onClick={handleMarkComplianceDone}
-                  disabled={isDebugLoading}
-                  className="px-3 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-                >
-                  {isDebugLoading === 'compliance' ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Processing...
-                    </>
-                  ) : (
-                    'Mark Compliance Done'
-                  )}
-                </button>
-                
-                <button
-                  onClick={handleSimulateArrival}
-                  disabled={isDebugLoading}
-                  className="px-3 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-                >
-                  {isDebugLoading === 'arrival' ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Processing...
-                    </>
-                  ) : (
-                    'Simulate Arrival & Release'
-                  )}
-                </button>
-                
-                <button
-                  onClick={handleSimulateBilling}
-                  disabled={isDebugLoading}
-                  className="px-3 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-                >
-                  {isDebugLoading === 'billing' ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Processing...
-                    </>
-                  ) : (
-                    'Simulate Invoice Processed'
-                  )}
-                </button>
-              </div>
-            </div>
-            </div>
-          </div>
-        </div>
+      {/* Active Task Strip */}
+      <ActiveTaskStrip employees={employees} shipments={shipments} />
 
-        {/* Right Column: Sticky Sidebar */}
-        <div className="xl:col-span-4">
-          <div className="xl:sticky xl:top-24 space-y-6">
-            <ActivityFeed actions={actions} previousActionIds={previousActionIds} />
-            
-            {/* Phase Filter Reset */}
-            {selectedPhase !== 'all' && (
-              <button
-                onClick={() => setSelectedPhase('all')}
-                className="w-full px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium transition-colors"
-              >
-                Show All Phases
-              </button>
-            )}
-            
-            {/* Compact Network Performance Chart - Enhanced */}
+      {/* Main Content - Full Width Ops AI Card */}
+      <div className="space-y-4">
+        <OpsAICard 
+          shipments={shipments}
+          employees={employees}
+          onPhaseSelect={setSelectedPhase}
+          selectedPhase={selectedPhase}
+          actions={actions}
+          previousActionIds={previousActionIds}
+          processingVelocity={processingVelocity}
+          errorRecoveryRate={errorRecoveryRate}
+          costSaved={costSaved}
+          isAutonomous={isAutonomous}
+          realMetrics={realMetrics}
+          setIsAutonomous={setIsAutonomous}
+        />
+        
+        {/* Phase Filter Reset */}
+        {selectedPhase !== 'all' && (
+          <button
+            onClick={() => setSelectedPhase('all')}
+            className="w-full px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium transition-colors"
+          >
+            Show All Phases
+          </button>
+        )}
+      </div>
+
+      {/* Shipments Table - Full Width */}
+      <div className="mt-16">
+        <ShipmentsTable 
+          shipments={shipments} 
+          previousShipmentIds={previousShipmentIds}
+          selectedPhase={selectedPhase}
+          onShipmentClick={handleShipmentClick}
+        />
+      </div>
+
+      {/* Toast Notifications */}
+      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2">
+        <AnimatePresence>
+          {toasts.map((toast) => (
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-              className="relative bg-gradient-to-br from-blue-50 via-white to-indigo-50/50 dark:from-gray-800 dark:via-gray-900 dark:to-gray-800 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-[0_4px_20px_rgba(0,0,0,0.08)] p-6 hover:shadow-[0_8px_30px_rgba(0,0,0,0.12)] transition-all duration-300 overflow-hidden group"
+              key={toast.id}
+              initial={{ opacity: 0, y: -20, x: 100 }}
+              animate={{ opacity: 1, y: 0, x: 0 }}
+              exit={{ opacity: 0, x: 100 }}
             >
-              {/* Decorative gradient */}
-              <div className="absolute top-0 right-0 w-40 h-40 bg-blue-500/10 rounded-full blur-3xl group-hover:bg-blue-500/20 transition-colors"></div>
-              
-              <div className="relative">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg">
-                      <BarChart3 className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-bold text-gray-900 dark:text-white">Shipment Volume & Cost Savings</h3>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Shipment volume vs cost savings</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
-                    <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">6M</span>
-                    <ChevronDown className="w-3 h-3 text-gray-500 dark:text-gray-400" />
-                  </div>
-                </div>
-                <ResponsiveContainer width="100%" height={220}>
-                <ComposedChart data={shipmentVolumeData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" className="dark:stroke-gray-700" />
-                  <XAxis 
-                    dataKey="month" 
-                    stroke="#6B7280"
-                    className="dark:stroke-gray-400"
-                    tick={{ fontSize: 12 }}
-                  />
-                  <YAxis 
-                    yAxisId="left" 
-                    stroke="#6B7280"
-                    className="dark:stroke-gray-400"
-                    tick={{ fontSize: 12 }}
-                    width={40}
-                  />
-                  <YAxis 
-                    yAxisId="right" 
-                    orientation="right" 
-                    stroke="#16A34A"
-                    className="dark:stroke-success"
-                    tick={{ fontSize: 12 }}
-                    width={50}
-                  />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Bar 
-                    yAxisId="left" 
-                    dataKey="containers" 
-                    fill="#2563EB" 
-                    name="containers"
-                    radius={[2, 2, 0, 0]}
-                  />
-                  <Line 
-                    yAxisId="right" 
-                    type="monotone" 
-                    dataKey="costSavings" 
-                    stroke="#16A34A" 
-                    strokeWidth={2}
-                    name="costSavings"
-                    dot={{ fill: '#16A34A', r: 3 }}
-                    activeDot={{ r: 4 }}
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
-              </div>
+              <Toast
+                message={toast.message}
+                type={toast.type}
+                onClose={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
+              />
             </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
 
-            {/* Compact Employee Ranking - Hidden for YC demo (focus on Ops AI) */}
-            {false && (
+      {/* Hidden Legacy Code - Not Rendered */}
+      {false && (
             <div className="relative bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-[0_4px_20px_rgba(0,0,0,0.08)] p-6 overflow-hidden group">
               <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
               
@@ -2907,21 +3515,8 @@ export default function ManageAgents() {
               </div>
             </div>
             )}
-          </div>
-        </div>
-      </div>
 
-      {/* Shipments Table - Full Width */}
-      <div className="mt-16">
-        <ShipmentsTable 
-          shipments={shipments} 
-          previousShipmentIds={previousShipmentIds}
-          selectedPhase={selectedPhase}
-          onShipmentClick={handleShipmentClick}
-        />
-      </div>
-
-      {/* Shipment Detail Drawer */}
+      {/* Shipment Detail Drawer - Existing */}
       {isDetailOpen && selectedShipment && (
         <ShipmentDetailDrawer
           shipment={selectedShipment}
@@ -2935,30 +3530,15 @@ export default function ManageAgents() {
         />
       )}
 
-      {/* Toast Notification */}
-      <AnimatePresence>
-        {toast && (
-          <motion.div
-            initial={{ opacity: 0, y: -50, x: '-50%' }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg shadow-lg px-4 py-3 flex items-center gap-3 min-w-[300px]"
-          >
-            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-              <Mail className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-            </div>
-            <div className="flex-1 text-sm font-medium text-gray-900 dark:text-white">
-              {toast.message}
-            </div>
-            <button
-              onClick={() => setToast(null)}
-              className="flex-shrink-0 p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
-            >
-              <X className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Shipment Drawer - Phase 3 - TEMPORARILY DISABLED */}
+      {/* <ShipmentDrawer
+        shipment={selectedShipmentForDrawer}
+        logs={actions}
+        onClose={() => {
+          setSelectedShipmentForDrawer(null)
+        }}
+      /> */}
+
 
       {/* Footer */}
       <footer className="mt-16 py-8 border-t border-gray-200 dark:border-gray-800">

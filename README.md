@@ -260,6 +260,34 @@ The system automatically deduplicates notifications:
 - Evidence is combined from all instances
 - Most recent timestamp is used
 
+## Auto-Pipeline Feature
+
+The system supports automatic phase progression for email-processed shipments. When enabled, new shipments from email will automatically progress through all phases (intake → compliance → monitoring → arrival → billing) over ~15 seconds.
+
+**To enable auto-pipeline:**
+```bash
+export AUTO_PIPELINE=true
+# or
+AUTO_PIPELINE=true npm run dev:server
+```
+
+**To disable (default):**
+```bash
+unset AUTO_PIPELINE
+# or simply don't set it
+```
+
+When enabled, each phase transition:
+- Updates the shipment phase in real-time
+- Logs events to Mission Log with clear phase labels (e.g., `[Monitoring] Started ETA tracking`)
+- Updates employee metrics (tasks executed, success rate)
+- Appears live in the frontend (which polls every 4 seconds)
+
+**Safety Features:**
+- **Duplicate Prevention**: Only runs once per shipment (prevents duplicate pipelines if same container is processed twice)
+- **Independent Execution**: Multiple emails can run their pipelines simultaneously without interference
+- **Graceful Disable**: When `AUTO_PIPELINE` is not set, no automatic progression occurs (safe for production mode)
+
 ## Getting Started
 
 ### Local Development with Full Functionality
