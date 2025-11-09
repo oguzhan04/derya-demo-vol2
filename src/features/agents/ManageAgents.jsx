@@ -1441,27 +1441,113 @@ function OpsAICard({ shipments, employees, onPhaseSelect, selectedPhase, actions
       {/* Glowing background effect */}
       <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
       
-      <div className="relative p-10">
+      <div className="relative p-8">
+        {/* Header - Enhanced */}
+        <div className="flex items-start justify-between mb-8">
+          <div className="flex items-center gap-5">
+            <div className="relative">
+              <div className="absolute inset-0 bg-primary/30 blur-2xl rounded-2xl animate-pulse"></div>
+              <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-br from-primary via-primary to-primary-dark flex items-center justify-center shadow-lg border-2 border-primary/20">
+                <Bot className="w-8 h-8 text-white" />
+              </div>
+              {/* Pulsing Activity Light */}
+              <motion.div
+                animate={{ 
+                  scale: [1, 1.3, 1],
+                  opacity: [1, 0.7, 1]
+                }}
+                transition={{ duration: 2, repeat: Infinity }}
+                className="absolute -top-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full border-2 border-white dark:border-gray-900 shadow-lg shadow-emerald-500/50"
+              />
+            </div>
+            <div>
+              <h3 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3 mb-1">
+                FreightBot Alpha
+                <motion.div
+                  animate={{ rotate: [0, 10, -10, 0] }}
+                  transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
+                >
+                  <Sparkles className="w-5 h-5 text-primary" />
+                </motion.div>
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 font-medium">Autonomous freight operations AI</p>
+              
+              {/* Auto-Pipeline Active Banner */}
+              {autoPipelineStatus && autoPipelineStatus.active && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="mt-2"
+                >
+                  <button
+                    onClick={() => {
+                      // Scroll to Mission Log section
+                      const missionLogElement = document.querySelector('[data-mission-log]')
+                      if (missionLogElement) {
+                        missionLogElement.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                      }
+                    }}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-primary/10 to-primary/5 dark:from-primary/20 dark:to-primary/10 border border-primary/30 dark:border-primary/40 rounded-lg text-xs font-medium text-primary dark:text-primary-light hover:from-primary/20 hover:to-primary/10 dark:hover:from-primary/30 dark:hover:to-primary/20 transition-all cursor-pointer group"
+                  >
+                    <motion.span
+                      animate={{ scale: [1, 1.2, 1] }}
+                      transition={{ duration: 1.5, repeat: Infinity }}
+                      className="text-base"
+                    >
+                      🧠
+                    </motion.span>
+                    <span>
+                      Auto-pipeline active for {autoPipelineStatus.count} shipment{autoPipelineStatus.count !== 1 ? 's' : ''} ({autoPipelineStatus.shipments.map(s => s.containerNo || s.id).join(', ')})
+                    </span>
+                    <ChevronDown className="w-3 h-3 opacity-50 group-hover:opacity-100 transition-opacity" />
+                  </button>
+                </motion.div>
+              )}
+            </div>
+          </div>
+          <motion.div
+            animate={{ 
+              boxShadow: [
+                '0 0 0 0 rgba(16, 185, 129, 0.4)',
+                '0 0 0 8px rgba(16, 185, 129, 0)',
+                '0 0 0 0 rgba(16, 185, 129, 0)'
+              ]
+            }}
+            transition={{ duration: 2, repeat: Infinity }}
+            className="relative"
+          >
+            <motion.span 
+              animate={{ opacity: [1, 0.8, 1] }}
+              transition={{ duration: 2, repeat: Infinity }}
+              className="relative px-4 py-2 bg-gradient-to-r from-emerald-500 via-green-500 to-emerald-600 text-white rounded-full text-xs font-bold uppercase tracking-wider shadow-lg"
+            >
+              <span className="relative z-10">ACTIVE</span>
+              <div className="absolute inset-0 bg-emerald-400 rounded-full blur-md opacity-50 animate-pulse"></div>
+            </motion.span>
+          </motion.div>
+        </div>
+
         {/* Phase Pipeline - Enhanced */}
         <div className="mb-8">
-          <div className="flex items-center justify-between mb-10">
-            <div className="text-lg font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider flex items-center gap-3">
-              <div className="w-2.5 h-10 bg-primary rounded-full"></div>
+          <div className="flex items-center justify-between mb-6">
+            <div className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider flex items-center gap-2">
+              <div className="w-1.5 h-6 bg-primary rounded-full"></div>
               Shipment Pipeline
             </div>
             <div className="flex items-center gap-4">
-              <span className="text-lg text-gray-500 dark:text-gray-400 font-medium">{shipments.length} total</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400 font-medium">{shipments.length} total</span>
               {lastEmailAction && (
-                <span className="text-lg text-gray-500 dark:text-gray-400 flex items-center gap-1">
-                  <MessageSquare className="w-6 h-6" />
+                <span className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                  <MessageSquare className="w-4 h-4" />
                   Last email: {formatLastEmailTime(lastEmailAction)}
                 </span>
               )}
             </div>
           </div>
-          <div className="relative bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 rounded-2xl p-8 border-2 border-gray-200 dark:border-gray-700 shadow-lg">
+          <div className="relative bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 rounded-2xl p-4 border-2 border-gray-200 dark:border-gray-700 shadow-lg">
             {/* Unified connecting flow line - more prominent */}
-            <div className="absolute top-1/2 left-8 right-8 h-2 bg-gradient-to-r from-blue-400 via-purple-400 via-yellow-400 to-green-400 dark:from-blue-500 dark:via-purple-500 dark:via-yellow-500 dark:to-green-500 opacity-70 -translate-y-1/2 pointer-events-none rounded-full shadow-md"></div>
+            <div className="absolute top-1/2 left-6 right-6 h-1.5 bg-gradient-to-r from-blue-400 via-purple-400 via-yellow-400 to-green-400 dark:from-blue-500 dark:via-purple-500 dark:via-yellow-500 dark:to-green-500 opacity-60 -translate-y-1/2 pointer-events-none rounded-full shadow-sm"></div>
             
             <div className="grid grid-cols-5 gap-0 relative">
             {PHASES_CONFIG.map((phase, idx) => {
@@ -1479,7 +1565,7 @@ function OpsAICard({ shipments, employees, onPhaseSelect, selectedPhase, actions
                     onClick={() => onPhaseSelect(phase.id)}
                     whileHover={{ scale: 1.01, y: -1 }}
                     whileTap={{ scale: 0.99 }}
-                    className={`relative flex flex-col px-8 py-8 text-left transition-all duration-300 overflow-hidden w-full h-full ${
+                    className={`relative flex flex-col px-5 py-5 text-left transition-all duration-300 overflow-hidden w-full h-full ${
                       isFirst ? 'rounded-l-xl' : ''
                     } ${isLast ? 'rounded-r-xl' : ''} ${
                       isSelected
@@ -1505,7 +1591,7 @@ function OpsAICard({ shipments, employees, onPhaseSelect, selectedPhase, actions
                       />
                     </div>
                   
-                  <div className={`text-base font-bold uppercase tracking-widest mb-5 relative z-10 flex items-center justify-between ${
+                  <div className={`text-xs font-bold uppercase tracking-widest mb-3 relative z-10 flex items-center justify-between ${
                     isSelected ? `${phase.textColor} font-extrabold` : 'text-gray-500 dark:text-gray-400'
                   }`}>
                     <div className="flex items-center gap-2">
@@ -1513,7 +1599,7 @@ function OpsAICard({ shipments, employees, onPhaseSelect, selectedPhase, actions
                         <motion.span
                           animate={{ scale: [1, 1.2, 1], opacity: [1, 0.7, 1] }}
                           transition={{ duration: 2, repeat: Infinity }}
-                          className={`w-3 h-3 rounded-full ${
+                          className={`w-2 h-2 rounded-full ${
                             phase.color === 'blue' ? 'bg-blue-500' :
                             phase.color === 'purple' ? 'bg-purple-500' :
                             phase.color === 'yellow' ? 'bg-yellow-500' :
@@ -1524,7 +1610,7 @@ function OpsAICard({ shipments, employees, onPhaseSelect, selectedPhase, actions
                       )}
                       {phase.label}
                     </div>
-                    <span className={`text-sm font-semibold px-3 py-2 rounded ${
+                    <span className={`text-[10px] font-semibold px-2 py-1 rounded ${
                       isSelected 
                         ? 'bg-white/20 dark:bg-gray-800/40' 
                         : 'bg-gray-200/50 dark:bg-gray-700/50'
@@ -1532,8 +1618,8 @@ function OpsAICard({ shipments, employees, onPhaseSelect, selectedPhase, actions
                       {idx + 1}/5
                     </span>
                   </div>
-                  <div className="flex items-baseline gap-2 mb-4 relative z-10">
-                    <div className={`text-6xl font-bold ${
+                  <div className="flex items-baseline gap-2 mb-2 relative z-10">
+                    <div className={`text-4xl font-bold ${
                       isSelected ? 'text-gray-900 dark:text-white' : 'text-gray-800 dark:text-gray-200'
                     }`}>
                       {count}
@@ -1548,7 +1634,7 @@ function OpsAICard({ shipments, employees, onPhaseSelect, selectedPhase, actions
                       </motion.span>
                     )}
                   </div>
-                  <div className={`text-base font-medium relative z-10 ${
+                  <div className={`text-xs font-medium relative z-10 ${
                     isSelected ? 'text-gray-700 dark:text-gray-300' : 'text-gray-500 dark:text-gray-400'
                   }`}>
                     shipments
@@ -1563,7 +1649,7 @@ function OpsAICard({ shipments, employees, onPhaseSelect, selectedPhase, actions
                   {/* Arrow connector to next phase */}
                   {nextPhase && idx < PHASES_CONFIG.length - 1 && (
                     <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-20 flex items-center">
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center ${
+                      <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
                         phase.color === 'blue' ? 'bg-blue-100 dark:bg-blue-900/40' :
                         phase.color === 'purple' ? 'bg-purple-100 dark:bg-purple-900/40' :
                         phase.color === 'yellow' ? 'bg-yellow-100 dark:bg-yellow-900/40' :
@@ -1573,8 +1659,8 @@ function OpsAICard({ shipments, employees, onPhaseSelect, selectedPhase, actions
                         phase.color === 'purple' ? 'border-purple-300 dark:border-purple-700' :
                         phase.color === 'yellow' ? 'border-yellow-300 dark:border-yellow-700' :
                         'border-green-300 dark:border-green-700'
-                      } shadow-lg`}>
-                        <ChevronRight className={`w-5 h-5 ${
+                      } shadow-md`}>
+                        <ChevronRight className={`w-4 h-4 ${
                           phase.color === 'blue' ? 'text-blue-600 dark:text-blue-400' :
                           phase.color === 'purple' ? 'text-purple-600 dark:text-purple-400' :
                           phase.color === 'yellow' ? 'text-yellow-600 dark:text-yellow-400' :
@@ -3377,6 +3463,54 @@ export default function ManageAgents() {
 
       {/* Main Content - Full Width Ops AI Card */}
       <div className="space-y-4">
+        {/* Simulate Arrival Notice Button */}
+        <div className="flex justify-end">
+          <button
+            onClick={async () => {
+              console.log('[SIMULATE] button clicked at', new Date().toISOString())
+              setIsLoading(true)
+              try {
+                const response = await fetch(`${API_BASE}/debug/simulate-email`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json'
+                  }
+                })
+                
+                const data = await response.json().catch(() => null)
+                
+                if (!response.ok || !data?.ok) {
+                  console.error('[SIMULATE] API call failed (non-OK)', { 
+                    status: response.status, 
+                    statusText: response.statusText,
+                    data 
+                  })
+                  showToast(`❌ Failed to simulate: ${data?.error || `HTTP ${response.status}`}`, 'error')
+                } else {
+                  console.log('[SIMULATE] API call succeeded', data.shipment)
+                  showToast(`✅ Simulated arrival notice processed: ${data.shipment?.containerNo || 'Container'}`, 'success')
+                  // Refetch data to show new shipment
+                  await fetchData()
+                }
+              } catch (error) {
+                console.error('[SIMULATE] API call failed (exception)', error)
+                showToast(`❌ Error: ${error.message}`, 'error')
+              } finally {
+                setIsLoading(false)
+              }
+            }}
+            disabled={isLoading}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-primary to-primary-dark hover:from-primary-dark hover:to-primary disabled:opacity-50 text-white rounded-lg transition-all text-sm font-medium shadow-sm hover:shadow-md"
+          >
+            {isLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Play className="w-4 h-4" />
+            )}
+            Simulate Arrival Notice
+          </button>
+        </div>
+        
         <OpsAICard 
           shipments={shipments}
           employees={employees}
