@@ -32,29 +32,32 @@ export default function App() {
 
           {/* Navigation */}
           <div className="space-y-6">
-            {/* ANALYTICS Section */}
+            {/* Dashboard - Standalone at top */}
+            <div>
+              <button 
+                onClick={() => setActive('dashboard')}
+                className={`w-full flex items-center ${isHovered ? 'gap-3 justify-start' : 'justify-center'} p-3 rounded-lg transition-all duration-200 ${
+                  active === 'dashboard' ? 'bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+                }`}
+              >
+                <LayoutDashboard size={20} className="flex-shrink-0" />
+                <span className={`overflow-hidden transition-all duration-300 whitespace-nowrap ${isHovered ? 'opacity-100' : 'opacity-0 w-0'}`}>
+                  Dashboard
+                </span>
+              </button>
+            </div>
+
+            {/* AI EMPLOYEES Section */}
             <div>
               <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3 px-3">
                 <span className={`overflow-hidden transition-all duration-300 whitespace-nowrap ${isHovered ? 'opacity-100' : 'opacity-0 w-0'}`}>
-                  Analytics
+                  AI Employees
                 </span>
               </div>
               <div className="space-y-2">
                 <button 
-                  onClick={() => setActive('dashboard')}
-                  className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all duration-200 ${
-                    active === 'dashboard' ? 'bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
-                  }`}
-                >
-                  <LayoutDashboard size={20} className="flex-shrink-0" />
-                  <span className={`overflow-hidden transition-all duration-300 whitespace-nowrap ${isHovered ? 'opacity-100' : 'opacity-0 w-0'}`}>
-                    Dashboard
-                  </span>
-                </button>
-
-                <button 
                   onClick={() => setActive('manage-employees')}
-                  className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all duration-200 ${
+                  className={`w-full flex items-center ${isHovered ? 'gap-3 justify-start' : 'justify-center'} p-3 rounded-lg transition-all duration-200 ${
                     active === 'manage-employees' ? 'bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
                   }`}
                 >
@@ -64,6 +67,17 @@ export default function App() {
                   </span>
                 </button>
 
+                <button 
+                  onClick={() => setActive('agent-builder')}
+                  className={`w-full flex items-center ${isHovered ? 'gap-3 justify-start' : 'justify-center'} p-3 rounded-lg transition-all duration-200 ${
+                    active === 'agent-builder' ? 'bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  <Wrench size={20} className="flex-shrink-0" />
+                  <span className={`overflow-hidden transition-all duration-300 whitespace-nowrap ${isHovered ? 'opacity-100' : 'opacity-0 w-0'}`}>
+                    Agent Builder
+                  </span>
+                </button>
               </div>
             </div>
 
@@ -77,7 +91,7 @@ export default function App() {
               <div className="space-y-2">
                 <button 
                   onClick={() => setActive('data-explorer')}
-                  className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all duration-200 ${
+                  className={`w-full flex items-center ${isHovered ? 'gap-3 justify-start' : 'justify-center'} p-3 rounded-lg transition-all duration-200 ${
                     active === 'data-explorer' ? 'bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
                   }`}
                 >
@@ -89,7 +103,7 @@ export default function App() {
 
                 <button 
                   onClick={() => setActive('data-integration')}
-                  className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all duration-200 ${
+                  className={`w-full flex items-center ${isHovered ? 'gap-3 justify-start' : 'justify-center'} p-3 rounded-lg transition-all duration-200 ${
                     active === 'data-integration' ? 'bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
                   }`}
                 >
@@ -98,20 +112,6 @@ export default function App() {
                     Integrations
                   </span>
                 </button>
-
-
-                <button 
-                  onClick={() => setActive('agent-builder')}
-                  className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all duration-200 ${
-                    active === 'agent-builder' ? 'bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
-                  }`}
-                >
-                  <Wrench size={20} className="flex-shrink-0" />
-                  <span className={`overflow-hidden transition-all duration-300 whitespace-nowrap ${isHovered ? 'opacity-100' : 'opacity-0 w-0'}`}>
-                    Agent Builder
-                  </span>
-                </button>
-
               </div>
             </div>
           </div>

@@ -211,6 +211,7 @@ export default function AgentBuilder() {
   const [draggingNode, setDraggingNode] = useState(null)
   const [nodeConfig, setNodeConfig] = useState({})
   const [isDragging, setIsDragging] = useState(false)
+  const [connectingDrag, setConnectingDrag] = useState(null) // { fromNodeId, fromX, fromY, toX, toY }
   const canvasRef = useRef(null)
   const fileInputRef = useRef(null)
   
@@ -218,8 +219,21 @@ export default function AgentBuilder() {
   const dragStateRef = useRef({
     node: null,
     offset: { x: 0, y: 0 },
-    startPos: { x: 0, y: 0 }
+    startPos: { x: 0, y: 0 },
+    hasMoved: false
   })
+  
+  // Track if last interaction was a drag (persists until next interaction)
+  const lastWasDragRef = useRef(false)
+  
+  // Track if we're in connection mode
+  const isConnectingRef = useRef(false)
+  
+  // Keep nodes in ref for access in event handlers
+  const nodesRef = useRef(nodes)
+  useEffect(() => {
+    nodesRef.current = nodes
+  }, [nodes])
 
   // Load saved workflows on mount
   useEffect(() => {
@@ -294,21 +308,21 @@ export default function AgentBuilder() {
     if (e.target === canvasRef.current) {
       setSelectedNode(null)
       setConnectingFrom(null)
+      setConnectingDrag(null)
     }
   }
 
   const handleNodeClick = (node, e) => {
     e.stopPropagation()
     
-    // Don't handle click if we actually dragged (moved more than 5px)
-    if (isDragging || draggingNode) {
-      const dragState = dragStateRef.current
-      if (dragState.node && dragState.startPos) {
-        const moved = Math.abs(e.clientX - dragState.startPos.x) > 5 || Math.abs(e.clientY - dragState.startPos.y) > 5
-        if (moved) {
-          return
-        }
-      }
+    // Don't handle click if clicking on connection handle
+    if (e.target.closest('.connection-handle')) {
+      return
+    }
+    
+    // Don't handle click if we actually dragged
+    if (lastWasDragRef.current) {
+      return // User was dragging, not clicking
     }
     
     if (connectingFrom) {
@@ -341,6 +355,143 @@ export default function AgentBuilder() {
     setConnectingFrom(nodeId)
   }
 
+  const handleConnectionDragStart = (node, e) => {
+    e.stopPropagation()
+    e.preventDefault()
+    
+    console.log('Connection drag started from node:', node.id)
+    
+    // Mark that we're connecting
+    isConnectingRef.current = true
+    
+    const canvasRect = canvasRef.current?.getBoundingClientRect()
+    if (!canvasRect) {
+      console.error('Canvas rect not found')
+      isConnectingRef.current = false
+      return
+    }
+    
+    // Calculate connection point (bottom center of node)
+    const fromX = node.x + node.width / 2
+    const fromY = node.y + node.height
+    
+    const initialDragState = {
+      fromNodeId: node.id,
+      fromX: fromX,
+      fromY: fromY,
+      toX: e.clientX - canvasRect.left,
+      toY: e.clientY - canvasRect.top
+    }
+    
+    setConnectingDrag(initialDragState)
+    console.log('Set connecting drag state:', initialDragState)
+    
+    let isDragging = true
+    
+    const handleMouseMove = (moveEvent) => {
+      if (!isDragging) return
+      
+      moveEvent.preventDefault()
+      moveEvent.stopPropagation()
+      
+      const canvasRect = canvasRef.current?.getBoundingClientRect()
+      if (!canvasRect) return
+      
+      const newToX = moveEvent.clientX - canvasRect.left
+      const newToY = moveEvent.clientY - canvasRect.top
+      
+      setConnectingDrag(prev => {
+        if (!prev) return null
+        const updated = {
+          ...prev,
+          toX: newToX,
+          toY: newToY
+        }
+        // Debug every 10th update to avoid spam
+        if (Math.random() < 0.1) {
+          console.log('Connection drag update:', updated)
+        }
+        return updated
+      })
+    }
+    
+    const handleMouseUp = (upEvent) => {
+      if (!isDragging) return
+      
+      isDragging = false
+      upEvent.preventDefault()
+      upEvent.stopPropagation()
+      
+      console.log('Connection drag ended')
+      
+      const canvasRect = canvasRef.current?.getBoundingClientRect()
+      if (!canvasRect) {
+        setConnectingDrag(null)
+        isConnectingRef.current = false
+        window.removeEventListener('mousemove', handleMouseMove, { capture: true })
+        window.removeEventListener('mouseup', handleMouseUp, { capture: true })
+        document.removeEventListener('mousemove', handleMouseMove, { capture: true })
+        document.removeEventListener('mouseup', handleMouseUp, { capture: true })
+        return
+      }
+      
+      const mouseX = upEvent.clientX - canvasRect.left
+      const mouseY = upEvent.clientY - canvasRect.top
+      
+      console.log('Mouse up at:', mouseX, mouseY)
+      
+      // Check if mouse is over any node
+      const targetNode = nodesRef.current.find(n => {
+        const isOver = mouseX >= n.x && mouseX <= n.x + n.width &&
+               mouseY >= n.y && mouseY <= n.y + n.height &&
+               n.id !== initialDragState.fromNodeId
+        if (isOver) {
+          console.log('Found target node:', n.id)
+        }
+        return isOver
+      })
+      
+      if (targetNode) {
+        console.log('Creating connection from', initialDragState.fromNodeId, 'to', targetNode.id)
+        // Create connection - use functional update to avoid closure issues
+        setConnections(prevConnections => {
+          const exists = prevConnections.some(c => 
+            (c.from === initialDragState.fromNodeId && c.to === targetNode.id) ||
+            (c.from === targetNode.id && c.to === initialDragState.fromNodeId)
+          )
+          
+          if (!exists) {
+            const newConnection = {
+              id: `conn-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              from: initialDragState.fromNodeId,
+              to: targetNode.id
+            }
+            console.log('Created new connection:', newConnection)
+            return [...prevConnections, newConnection]
+          } else {
+            console.log('Connection already exists')
+          }
+          return prevConnections
+        })
+      } else {
+        console.log('No target node found')
+      }
+      
+      setConnectingDrag(null)
+      isConnectingRef.current = false
+      window.removeEventListener('mousemove', handleMouseMove, { capture: true })
+      window.removeEventListener('mouseup', handleMouseUp, { capture: true })
+      document.removeEventListener('mousemove', handleMouseMove, { capture: true })
+      document.removeEventListener('mouseup', handleMouseUp, { capture: true })
+    }
+    
+    // Use capture phase and make sure events are captured on both window and document
+    window.addEventListener('mousemove', handleMouseMove, { passive: false, capture: true })
+    window.addEventListener('mouseup', handleMouseUp, { passive: false, once: true, capture: true })
+    document.addEventListener('mousemove', handleMouseMove, { passive: false, capture: true })
+    document.addEventListener('mouseup', handleMouseUp, { passive: false, once: true, capture: true })
+  }
+
   const handleNodeDragStart = (node, e) => {
     e.stopPropagation()
     e.preventDefault()
@@ -349,14 +500,19 @@ export default function AgentBuilder() {
     const canvasRect = canvasRef.current?.getBoundingClientRect()
     if (!canvasRect) return
     
-    const offsetX = e.clientX - rect.left - node.width / 2
-    const offsetY = e.clientY - rect.top - node.height / 2
+    // Reset drag flag for new interaction
+    lastWasDragRef.current = false
+    
+    // Calculate offset from click position to node's top-left corner
+    const offsetX = e.clientX - rect.left
+    const offsetY = e.clientY - rect.top
     
     // Store in ref for stable access
     dragStateRef.current = {
       node: node,
       offset: { x: offsetX, y: offsetY },
-      startPos: { x: e.clientX, y: e.clientY }
+      startPos: { x: e.clientX, y: e.clientY },
+      hasMoved: false
     }
     
     setIsDragging(true)
@@ -372,21 +528,32 @@ export default function AgentBuilder() {
         if (!canvasRect || !dragStateRef.current.node) return
         
         const dragState = dragStateRef.current
-        const newX = e.clientX - canvasRect.left - dragState.offset.x
-        const newY = e.clientY - canvasRect.top - dragState.offset.y
         
-        setNodes(prevNodes => {
-          try {
-            return prevNodes.map(n => 
-              n.id === dragState.node.id 
-                ? { ...n, x: Math.max(0, newX), y: Math.max(0, newY) }
-                : n
-            )
-          } catch (err) {
-            console.error('Error updating nodes:', err)
-            return prevNodes
-          }
-        })
+        // Check if mouse has actually moved (more than 3px threshold)
+        const movedX = Math.abs(e.clientX - dragState.startPos.x)
+        const movedY = Math.abs(e.clientY - dragState.startPos.y)
+        const hasMoved = movedX > 3 || movedY > 3
+        
+        if (hasMoved) {
+          dragStateRef.current.hasMoved = true
+          
+          // Calculate new position: mouse position relative to canvas minus the offset
+          const newX = e.clientX - canvasRect.left - dragState.offset.x
+          const newY = e.clientY - canvasRect.top - dragState.offset.y
+          
+          setNodes(prevNodes => {
+            try {
+              return prevNodes.map(n => 
+                n.id === dragState.node.id 
+                  ? { ...n, x: Math.max(0, newX), y: Math.max(0, newY) }
+                  : n
+              )
+            } catch (err) {
+              console.error('Error updating nodes:', err)
+              return prevNodes
+            }
+          })
+        }
       } catch (err) {
         console.error('Error in handleMouseMove:', err)
         // Clean up on error
@@ -396,13 +563,22 @@ export default function AgentBuilder() {
     
     const handleMouseUp = (e) => {
       try {
-        e.preventDefault()
-        e.stopPropagation()
+        const wasDragging = dragStateRef.current.hasMoved
+        
+        // Track if this was a drag for the click handler
+        lastWasDragRef.current = wasDragging
+        
+        // Only prevent default if we actually dragged
+        if (wasDragging) {
+          e.preventDefault()
+          e.stopPropagation()
+        }
         
         dragStateRef.current = {
           node: null,
           offset: { x: 0, y: 0 },
-          startPos: { x: 0, y: 0 }
+          startPos: { x: 0, y: 0 },
+          hasMoved: false
         }
         
         setIsDragging(false)
@@ -410,6 +586,11 @@ export default function AgentBuilder() {
         
         window.removeEventListener('mousemove', handleMouseMove)
         window.removeEventListener('mouseup', handleMouseUp)
+        
+        // Reset drag flag after a short delay to allow click handler to check it
+        setTimeout(() => {
+          lastWasDragRef.current = false
+        }, 100)
       } catch (err) {
         console.error('Error in handleMouseUp:', err)
       }
@@ -834,7 +1015,10 @@ export default function AgentBuilder() {
               }}
             >
               {/* SVG for Connections */}
-              <svg className="absolute inset-0 pointer-events-none" style={{ zIndex: 1 }}>
+              <svg 
+                className="absolute inset-0 pointer-events-none" 
+                style={{ zIndex: 1, width: '100%', height: '100%' }}
+              >
                 {connections.map((conn) => {
                   const fromNode = nodes.find(n => n.id === conn.from)
                   const toNode = nodes.find(n => n.id === conn.to)
@@ -852,9 +1036,46 @@ export default function AgentBuilder() {
                     </g>
                   )
                 })}
+                
+                {/* Temporary connection line while dragging */}
+                {connectingDrag && (() => {
+                  const fromX = connectingDrag.fromX
+                  const fromY = connectingDrag.fromY
+                  const toX = connectingDrag.toX
+                  const toY = connectingDrag.toY
+                  const midY = (fromY + toY) / 2
+                  const path = `M ${fromX} ${fromY} C ${fromX} ${midY} ${toX} ${midY} ${toX} ${toY}`
+                  
+                  // Debug: log path occasionally
+                  if (Math.random() < 0.05) {
+                    console.log('Rendering connection line:', { fromX, fromY, toX, toY, path })
+                  }
+                  
+                  return (
+                    <g key="temp-connection">
+                      <path
+                        d={path}
+                        stroke="#10B981"
+                        strokeWidth="3"
+                        strokeDasharray="8,4"
+                        fill="none"
+                        markerEnd="url(#arrowhead-temp)"
+                        style={{ 
+                          pointerEvents: 'none',
+                          opacity: 0.8,
+                          filter: 'drop-shadow(0 0 2px rgba(16, 185, 129, 0.5))'
+                        }}
+                      />
+                    </g>
+                  )
+                })()}
+                
                 <defs>
                   <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
                     <polygon points="0 0, 10 3, 0 6" fill="#3B82F6" />
+                  </marker>
+                  <marker id="arrowhead-temp" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                    <polygon points="0 0, 10 3, 0 6" fill="#10B981" />
                   </marker>
                 </defs>
               </svg>
@@ -867,6 +1088,7 @@ export default function AgentBuilder() {
                 return (
                   <div
                     key={node.id}
+                    data-node-id={node.id}
                     className={`absolute border-2 rounded-lg p-3 cursor-move min-w-[120px] min-h-[80px] flex flex-col items-center justify-center ${
                       selectedNode?.id === node.id 
                         ? 'border-blue-500 bg-blue-50' 
@@ -888,6 +1110,14 @@ export default function AgentBuilder() {
                     }}
                     onClick={(e) => handleNodeClick(node, e)}
                     onMouseDown={(e) => {
+                      // Don't start node drag if we're connecting
+                      if (isConnectingRef.current) {
+                        return
+                      }
+                      // Don't start node drag if clicking on connection button
+                      if (e.target.closest('.connection-handle')) {
+                        return
+                      }
                       // Only start drag on left mouse button
                       if (e.button === 0) {
                         handleNodeDragStart(node, e)
@@ -900,11 +1130,29 @@ export default function AgentBuilder() {
                     </div>
                     <div className="text-xs font-medium text-gray-900 text-center mb-1">{node.name}</div>
                     <button
-                      onClick={(e) => startConnection(node.id, e)}
-                      className="mt-1 p-1 hover:bg-gray-200 rounded"
-                      title="Connect to another node"
+                      type="button"
+                      onMouseDown={(e) => {
+                        console.log('Connection handle mousedown', e)
+                        e.stopPropagation()
+                        e.preventDefault()
+                        handleConnectionDragStart(node, e)
+                      }}
+                      onMouseUp={(e) => {
+                        e.stopPropagation()
+                        e.preventDefault()
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        e.preventDefault()
+                        console.log('Connection handle clicked (fallback)')
+                        // Fallback: use click-to-connect
+                        startConnection(node.id, e)
+                      }}
+                      className="connection-handle mt-1 p-1.5 hover:bg-blue-100 rounded-full cursor-crosshair flex items-center justify-center border-2 border-blue-300 bg-blue-50 transition-colors z-20 relative"
+                      title="Drag to connect to another node"
+                      style={{ pointerEvents: 'auto', zIndex: 20, touchAction: 'none' }}
                     >
-                      <LinkIcon size={12} className="text-gray-500" />
+                      <Plus size={14} className="text-blue-600 pointer-events-none" />
                     </button>
                   </div>
                 )

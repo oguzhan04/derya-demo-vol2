@@ -109,16 +109,85 @@ function initializePhaseData(shipment) {
   return shipment
 }
 
+// ============================================================================
+// INITIAL SHIPMENTS - Only these 3 flagged shipments should exist
+// ============================================================================
 let shipments = [
-  { id: '1', containerNo: 'MAEU1234567', status: 'in-transit', eta: '2024-01-20T14:00:00Z', carrier: 'Maersk', port: 'Rotterdam', lastUpdatedBy: 'System' },
-  { id: '2', containerNo: 'TCLU9876543', status: 'in-transit', eta: '2024-01-21T10:00:00Z', carrier: 'COSCO', port: 'Hamburg', lastUpdatedBy: 'System' },
-  { id: '3', containerNo: 'MSKU4567890', status: 'in-transit', eta: '2024-01-22T16:00:00Z', carrier: 'MSC', port: 'Antwerp', lastUpdatedBy: 'System' },
-  { id: '4', containerNo: 'COSU1112223', status: 'in-transit', eta: '2024-01-23T09:00:00Z', carrier: 'CMA CGM', port: 'Felixstowe', lastUpdatedBy: 'System' },
-  { id: '5', containerNo: 'HLCU4445556', status: 'in-transit', eta: '2024-01-24T12:00:00Z', carrier: 'Hapag-Lloyd', port: 'Bremen', lastUpdatedBy: 'System' }
+  // Shipment 1: Class 8 chemical → Compliance Team
+  { 
+    id: '6', 
+    containerNo: 'MSKU7891234', 
+    status: 'in-transit', 
+    eta: '2024-12-15T10:00:00Z', 
+    carrier: 'MSC', 
+    port: 'Port of Los Angeles', 
+    vessel: 'MSC OSCAR',
+    voyage: 'V1234',
+    totalCharges: 12500,
+    commodity: 'Class 8 Chemical Products',
+    lastUpdatedBy: 'FreightBot Alpha',
+    source: 'email',
+    complianceStatus: 'flagged',
+    complianceIssues: ['class 8 chemical'],
+    emailMetadata: {
+      subject: 'Arrival Notice - MSKU7891234',
+      from: 'carrier@msc.com',
+      receivedAt: new Date().toISOString(),
+      attachmentName: 'arrival_notice.pdf',
+      attachmentSize: 245000
+    }
+  },
+  { 
+    id: '7', 
+    containerNo: 'MAEU4567890', 
+    status: 'in-transit', 
+    eta: '2024-12-18T14:30:00Z', 
+    carrier: 'Maersk', 
+    port: 'Port of Rotterdam', 
+    vessel: 'MAERSK MADRID',
+    voyage: 'V5678',
+    totalCharges: 18900,
+    commodity: 'Food Products',
+    lastUpdatedBy: 'FreightBot Alpha',
+    source: 'email',
+    complianceStatus: 'flagged',
+    complianceIssues: ['EU 2017/625 reconciliation'],
+    emailMetadata: {
+      subject: 'Arrival Notice - MAEU4567890',
+      from: 'notifications@maersk.com',
+      receivedAt: new Date().toISOString(),
+      attachmentName: 'arrival_notice.pdf',
+      attachmentSize: 312000
+    }
+  },
+  { 
+    id: '8', 
+    containerNo: 'COSU9876543', 
+    status: 'in-transit', 
+    eta: '2024-12-20T09:15:00Z', 
+    carrier: 'CMA CGM', 
+    port: 'Port of Hamburg', 
+    vessel: 'CMA CGM ANTOINE DE SAINT EXUPERY',
+    voyage: 'V9012',
+    totalCharges: 15200,
+    invoiceAmount: 16800, // Mismatch with totalCharges
+    commodity: 'Electronics',
+    lastUpdatedBy: 'FreightBot Alpha',
+    source: 'email',
+    complianceStatus: 'flagged',
+    complianceIssues: ['invoice-ratecard mismatch'],
+    emailMetadata: {
+      subject: 'Arrival Notice - COSU9876543',
+      from: 'operations@cmacgm.com',
+      receivedAt: new Date().toISOString(),
+      attachmentName: 'arrival_notice.pdf',
+      attachmentSize: 278000
+    }
+  }
 ].map(initializePhaseData)
 
 // Global shipment ID counter - ensures unique IDs for all new shipments
-let nextShipmentId = shipments.length + 1
+let nextShipmentId = 9 // Start after our 3 flagged shipments (ids 6, 7, 8)
 
 let actionCounter = 5
 
@@ -776,6 +845,19 @@ function runComplianceCheck(shipment) {
   // Ensure phase data
   initializePhaseData(shipment)
 
+  // If shipment is already flagged with manually set issues, preserve them
+  if (shipment.complianceStatus === 'flagged' && 
+      shipment.complianceIssues && 
+      shipment.complianceIssues.length > 0 &&
+      // Check if issues look manually set (not from auto-compliance check)
+      (shipment.complianceIssues.includes('class 8 chemical') ||
+       shipment.complianceIssues.includes('EU 2017/625 reconciliation') ||
+       shipment.complianceIssues.includes('invoice-ratecard mismatch'))) {
+    // Preserve existing manually set compliance issues
+    console.log(`[COMPLIANCE] Preserving manually set compliance issues for ${shipment.containerNo}:`, shipment.complianceIssues)
+    return
+  }
+
   // Use the new compliance rules engine
   const complianceResult = runComplianceChecks(shipment)
   
@@ -1135,6 +1217,93 @@ app.post('/api/debug/phase/billing-processed', (req, res) => {
 // ============================================================================
 
 app.get('/api/shipments', (req, res) => {
+  // Ensure our 3 specific flagged shipments always exist
+  const REQUIRED_CONTAINERS = ['MSKU7891234', 'MAEU4567890', 'COSU9876543']
+  
+  REQUIRED_CONTAINERS.forEach((containerNo, index) => {
+    const existingIndex = shipments.findIndex(s => (s.containerNo || s.id) === containerNo)
+    if (existingIndex === -1) {
+      // Create the shipment if it doesn't exist
+      const shipmentData = [
+        {
+          id: '6',
+          containerNo: 'MSKU7891234',
+          status: 'in-transit',
+          eta: '2024-12-15T10:00:00Z',
+          carrier: 'MSC',
+          port: 'Port of Los Angeles',
+          vessel: 'MSC OSCAR',
+          voyage: 'V1234',
+          totalCharges: 12500,
+          commodity: 'Class 8 Chemical Products',
+          lastUpdatedBy: 'FreightBot Alpha',
+          source: 'email',
+          complianceStatus: 'flagged',
+          complianceIssues: ['class 8 chemical'],
+          emailMetadata: {
+            subject: 'Arrival Notice - MSKU7891234',
+            from: 'carrier@msc.com',
+            receivedAt: new Date().toISOString(),
+            attachmentName: 'arrival_notice.pdf',
+            attachmentSize: 245000
+          }
+        },
+        {
+          id: '7',
+          containerNo: 'MAEU4567890',
+          status: 'in-transit',
+          eta: '2024-12-18T14:30:00Z',
+          carrier: 'Maersk',
+          port: 'Port of Rotterdam',
+          vessel: 'MAERSK MADRID',
+          voyage: 'V5678',
+          totalCharges: 18900,
+          commodity: 'Food Products',
+          lastUpdatedBy: 'FreightBot Alpha',
+          source: 'email',
+          complianceStatus: 'flagged',
+          complianceIssues: ['EU 2017/625 reconciliation'],
+          emailMetadata: {
+            subject: 'Arrival Notice - MAEU4567890',
+            from: 'notifications@maersk.com',
+            receivedAt: new Date().toISOString(),
+            attachmentName: 'arrival_notice.pdf',
+            attachmentSize: 312000
+          }
+        },
+        {
+          id: '8',
+          containerNo: 'COSU9876543',
+          status: 'in-transit',
+          eta: '2024-12-20T09:15:00Z',
+          carrier: 'CMA CGM',
+          port: 'Port of Hamburg',
+          vessel: 'CMA CGM ANTOINE DE SAINT EXUPERY',
+          voyage: 'V9012',
+          totalCharges: 15200,
+          invoiceAmount: 16800,
+          commodity: 'Electronics',
+          lastUpdatedBy: 'FreightBot Alpha',
+          source: 'email',
+          complianceStatus: 'flagged',
+          complianceIssues: ['invoice-ratecard mismatch'],
+          emailMetadata: {
+            subject: 'Arrival Notice - COSU9876543',
+            from: 'operations@cmacgm.com',
+            receivedAt: new Date().toISOString(),
+            attachmentName: 'arrival_notice.pdf',
+            attachmentSize: 278000
+          }
+        }
+      ]
+      
+      const newShipment = shipmentData[index]
+      initializePhaseData(newShipment)
+      shipments.push(newShipment)
+      console.log(`[API] Created missing flagged shipment: ${containerNo}`)
+    }
+  })
+  
   res.json(shipments)
 })
 

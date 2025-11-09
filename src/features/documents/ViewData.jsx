@@ -80,6 +80,7 @@ const getCategoryColor = () => {
 export default function ViewData() {
   const [selectedLoad, setSelectedLoad] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
+  const [viewMode, setViewMode] = useState('default'); // 'default' or 'table'
   const [showJsonModal, setShowJsonModal] = useState(false);
   const [selectedLoadJson, setSelectedLoadJson] = useState(null);
   const [showNewLoadModal, setShowNewLoadModal] = useState(false);
@@ -1056,6 +1057,17 @@ Date: ${new Date().toISOString().split('T')[0]}`;
             <option value="delivered">Delivered</option>
           </select>
         </div>
+        <div className="flex items-center gap-2">
+          <label className="text-sm font-medium text-gray-700">View:</label>
+          <select 
+            value={viewMode} 
+            onChange={(e) => setViewMode(e.target.value)}
+            className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="default">Default</option>
+            <option value="table">Table</option>
+          </select>
+        </div>
         <button 
           onClick={handleCreateNewLoad}
           className="ml-auto flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -1065,13 +1077,122 @@ Date: ${new Date().toISOString().split('T')[0]}`;
         </button>
       </div>
 
-      {/* Loads List */}
-      <div className="space-y-4" key={refreshKey}>
-        {filteredLoads.map((load) => (
-          <div 
-            key={load.id}
-            className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow"
-          >
+      {/* Loads List or Table */}
+      {viewMode === 'table' ? (
+        /* Table View */
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="text-left py-3 px-4 font-medium text-gray-700">Load ID</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">Container Number</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">Origin</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">Destination</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">Mode</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">Distance</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">Transit Days</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">Cargo Type</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">Cargo Value</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">Weight (kg)</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">Volume (CBM)</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">Containers</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">Hazardous</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">Temp Controlled</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">Status</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">Completion %</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">Created At</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">Updated At</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">BOL Status</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">BOL Files</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">Commercial Invoice Status</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">CI Files</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">Invoices Status</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">Invoice Files</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">Rate Table Status</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">RT Files</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">Quotation Status</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">Quotation Files</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">Booking Status</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">Booking Files</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">Tracking Status</th>
+                <th className="text-left py-3 px-4 font-medium text-gray-700">Tracking Files</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredLoads.map((load, index) => {
+                // Extract container number from documents (check BOL first, then booking)
+                const getContainerNumber = () => {
+                  const bolContainers = load.documents?.billOfLading?.files?.[0]?.extractedJson?.containerNumbers;
+                  const bookingContainers = load.documents?.booking?.files?.[0]?.extractedJson?.containerNumbers;
+                  const containers = bolContainers || bookingContainers;
+                  if (containers && Array.isArray(containers) && containers.length > 0) {
+                    return containers[0];
+                  }
+                  return null;
+                };
+                const containerNumber = getContainerNumber();
+                
+                return (
+                <tr 
+                  key={load.id}
+                  className={`border-b border-gray-100 hover:bg-gray-50 ${
+                    index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
+                  }`}
+                >
+                  <td className="py-2 px-4 font-mono text-xs text-gray-900">{load.id || '—'}</td>
+                  <td className="py-2 px-4 font-mono text-xs text-gray-700">{containerNumber || '—'}</td>
+                  <td className="py-2 px-4 text-gray-700">{load.route?.origin || '—'}</td>
+                  <td className="py-2 px-4 text-gray-700">{load.route?.destination || '—'}</td>
+                  <td className="py-2 px-4 text-gray-700">{load.route?.mode || '—'}</td>
+                  <td className="py-2 px-4 text-gray-700">{load.route?.distance != null ? `${load.route.distance} nm` : '—'}</td>
+                  <td className="py-2 px-4 text-gray-700">{load.route?.estimatedTransitDays != null ? `${load.route.estimatedTransitDays} days` : '—'}</td>
+                  <td className="py-2 px-4 text-gray-700">{load.cargo?.type || '—'}</td>
+                  <td className="py-2 px-4 text-gray-700">{load.cargo?.value != null ? `$${load.cargo.value.toLocaleString()}` : '—'}</td>
+                  <td className="py-2 px-4 text-gray-700">{load.cargo?.weight != null ? `${load.cargo.weight.toLocaleString()} kg` : '—'}</td>
+                  <td className="py-2 px-4 text-gray-700">{load.cargo?.volume != null ? `${load.cargo.volume} CBM` : '—'}</td>
+                  <td className="py-2 px-4 text-gray-700">{load.cargo?.containers != null ? `${load.cargo.containers} TEU` : '—'}</td>
+                  <td className="py-2 px-4 text-gray-700">{load.cargo?.hazardous != null ? (load.cargo.hazardous ? 'Yes' : 'No') : '—'}</td>
+                  <td className="py-2 px-4 text-gray-700">{load.cargo?.temperatureControlled != null ? (load.cargo.temperatureControlled ? 'Yes' : 'No') : '—'}</td>
+                  <td className="py-2 px-4">
+                    <span className={`px-2 py-0.5 rounded text-xs ${
+                      load.status === 'delivered' ? 'bg-slate-100 text-slate-800' :
+                      load.status === 'in_transit' || load.status === 'in transit' ? 'bg-blue-100 text-blue-800' :
+                      'bg-amber-100 text-amber-800'
+                    }`}>
+                      {load.status || '—'}
+                    </span>
+                  </td>
+                  <td className="py-2 px-4 text-gray-700">{load.completion != null ? `${load.completion}%` : '—'}</td>
+                  <td className="py-2 px-4 text-gray-700">{load.createdAt ? new Date(load.createdAt).toLocaleDateString() : '—'}</td>
+                  <td className="py-2 px-4 text-gray-700">{load.updatedAt ? new Date(load.updatedAt).toLocaleDateString() : '—'}</td>
+                  <td className="py-2 px-4 text-gray-700">{load.documents?.billOfLading?.status || '—'}</td>
+                  <td className="py-2 px-4 text-gray-700">{load.documents?.billOfLading?.files?.length || 0}</td>
+                  <td className="py-2 px-4 text-gray-700">{load.documents?.commercialInvoice?.status || '—'}</td>
+                  <td className="py-2 px-4 text-gray-700">{load.documents?.commercialInvoice?.files?.length || 0}</td>
+                  <td className="py-2 px-4 text-gray-700">{load.documents?.invoices?.status || '—'}</td>
+                  <td className="py-2 px-4 text-gray-700">{load.documents?.invoices?.files?.length || 0}</td>
+                  <td className="py-2 px-4 text-gray-700">{load.documents?.rateTable?.status || '—'}</td>
+                  <td className="py-2 px-4 text-gray-700">{load.documents?.rateTable?.files?.length || 0}</td>
+                  <td className="py-2 px-4 text-gray-700">{load.documents?.quotation?.status || '—'}</td>
+                  <td className="py-2 px-4 text-gray-700">{load.documents?.quotation?.files?.length || 0}</td>
+                  <td className="py-2 px-4 text-gray-700">{load.documents?.booking?.status || '—'}</td>
+                  <td className="py-2 px-4 text-gray-700">{load.documents?.booking?.files?.length || 0}</td>
+                  <td className="py-2 px-4 text-gray-700">{load.documents?.tracking?.status || '—'}</td>
+                  <td className="py-2 px-4 text-gray-700">{load.documents?.tracking?.files?.length || 0}</td>
+                </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        /* Default Card View */
+        <div className="space-y-4" key={refreshKey}>
+          {filteredLoads.map((load) => (
+            <div 
+              key={load.id}
+              className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow"
+            >
             {/* Load Header */}
             <div className="p-6 border-b border-gray-100">
               <div className="flex items-center justify-between">
@@ -1185,7 +1306,8 @@ Date: ${new Date().toISOString().split('T')[0]}`;
             </div>
           </div>
         ))}
-      </div>
+        </div>
+      )}
 
       {/* Empty State */}
       {filteredLoads.length === 0 && (
