@@ -68,6 +68,30 @@ async function storeIndex(docId, index) {
 // ============================================================================
 
 export default async function handler(req) {
+  // Handle OPTIONS for CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 200,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+      },
+    })
+  }
+
+  // Handle GET for health checks
+  if (req.method === 'GET') {
+    return new Response(JSON.stringify({ 
+      endpoint: '/api/cx/ingest',
+      method: 'POST',
+      description: 'Ingest documents for customer experience RAG'
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })
+  }
+
   try {
     // Check for required environment variables
     if (!OPENAI_API_KEY || !BLOB_READ_WRITE_TOKEN) {

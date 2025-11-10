@@ -196,6 +196,30 @@ function getSampleData(scope, id) {
 // ============================================================================
 
 export default async function handler(req) {
+  // Handle OPTIONS for CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 200,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+      },
+    })
+  }
+
+  // Handle GET for health checks
+  if (req.method === 'GET') {
+    return new Response(JSON.stringify({ 
+      endpoint: '/api/cx/notify',
+      method: 'POST',
+      description: 'Generate customer experience notifications'
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })
+  }
+
   try {
     // Parse and validate request body
     const body = await req.json().catch(() => ({}));
